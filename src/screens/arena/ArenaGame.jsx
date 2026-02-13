@@ -18,6 +18,9 @@ export default function ArenaGame({ token, roomCode, onFinish }) {
   const [elimData, setElimData] = useState(null);
   const [championData, setChampionData] = useState(null);
   const [myAlive, setMyAlive] = useState(true);
+  const [finals, setFinals] = useState(false);
+  const [finalsWins, setFinalsWins] = useState(null);
+  const [finalsPlayers, setFinalsPlayers] = useState(null);
 
   useSocket("arena:start", useCallback((data) => {
     setPlayers(data.players);
@@ -46,7 +49,26 @@ export default function ArenaGame({ token, roomCode, onFinish }) {
     setReactionGoTime(data.goTime);
   }, []));
 
+  useSocket("arena:finals-start", useCallback((data) => {
+    setFinals(true);
+    setFinalsPlayers(data.players);
+    setFinalsWins(data.finalsWins);
+    setElimData({
+      scores: data.players,
+      eliminated: [],
+      remaining: data.players,
+      finals: true,
+      finalsWins: data.finalsWins,
+      finalsRound: 1,
+      roundWinner: data.firstRoundWinner,
+    });
+    setPhase("finals-intro");
+  }, []));
+
   useSocket("arena:round-result", useCallback((data) => {
+    if (data.finals) {
+      setFinalsWins(data.finalsWins);
+    }
     setElimData(data);
     const isEliminated = data.eliminated.some((p) => p.token === token);
     if (isEliminated) setMyAlive(false);
@@ -94,6 +116,26 @@ export default function ArenaGame({ token, roomCode, onFinish }) {
       );
     }
 
+    if (phase === "finals-intro" && finalsPlayers) {
+      return (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "70vh", animation: "fadeIn 0.3s ease" }}>
+          <div style={{ fontSize: 70, marginBottom: 12, animation: "pulse 1s infinite" }}>🏆</div>
+          <h2 style={{ fontSize: 30, fontWeight: 900, color: C.gold, margin: "0 0 8px" }}>النهائي!</h2>
+          <p style={{ color: C.muted, fontSize: 14, margin: "0 0 20px" }}>Best of 3 — أول واحد يفوز بجولتين</p>
+          <div style={{ display: "flex", alignItems: "center", gap: 24, marginBottom: 20 }}>
+            {finalsPlayers.map((p, i) => (
+              <div key={p.token} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 48 }}>{p.avatar}</span>
+                <span style={{ fontSize: 14, fontWeight: 800, color: p.token === token ? C.green : "#fff" }}>{p.name}</span>
+                <span style={{ fontSize: 28, fontWeight: 900, color: C.gold }}>{finalsWins?.[p.token] || 0}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 13, color: C.muted, animation: "pulse 1.5s infinite" }}>⏳ الجولة التالية قريباً...</div>
+        </div>
+      );
+    }
+
     if (phase === "challenge" && challengeData) {
       return (
         <ArenaChallenge
@@ -108,7 +150,7 @@ export default function ArenaGame({ token, roomCode, onFinish }) {
     }
 
     if (phase === "elimination" && elimData) {
-      return <ArenaElimination data={elimData} token={token} myAlive={myAlive} />;
+      return <ArenaElimination data={elimData} token={token} myAlive={myAlive} finals={finals} finalsWins={finalsWins} />;
     }
 
     if (phase === "champion" && championData) {

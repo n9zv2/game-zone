@@ -1,9 +1,62 @@
 import { C } from "../../theme.js";
 import Card from "../../components/ui/Card.jsx";
 
-export default function ArenaElimination({ data, token, myAlive }) {
-  const wasEliminated = data.eliminated.some((p) => p.token === token);
+export default function ArenaElimination({ data, token, myAlive, finals, finalsWins }) {
+  const wasEliminated = data.eliminated?.some((p) => p.token === token);
 
+  // --- Finals mode ---
+  if (data.finals && finalsWins) {
+    const players = data.remaining || data.scores || [];
+    const roundWinner = data.roundWinner;
+
+    return (
+      <div style={{ animation: "fadeIn 0.3s ease" }}>
+        <div style={{ textAlign: "center", marginBottom: 16 }}>
+          <div style={{ fontSize: 48, marginBottom: 8, animation: "pulse 0.8s infinite" }}>🏆</div>
+          <h2 style={{ fontSize: 22, fontWeight: 900, color: C.gold, margin: "0 0 4px" }}>جولة النهائي</h2>
+          <p style={{ color: C.muted, fontSize: 13, margin: 0 }}>الجولة {data.finalsRound || 1}</p>
+        </div>
+
+        {/* Finals scoreboard */}
+        <Card glow color={C.gold} style={{ marginBottom: 16, padding: 20 }}>
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 32 }}>
+            {players.map((p) => (
+              <div key={p.token} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 40 }}>{p.avatar}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: p.token === token ? C.green : "#fff" }}>{p.name}</span>
+                <span style={{ fontSize: 36, fontWeight: 900, color: C.gold }}>{finalsWins[p.token] || 0}</span>
+                {roundWinner === p.token && <span style={{ fontSize: 18 }}>✅</span>}
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* Round scores */}
+        {data.scores && (
+          <Card style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.muted, marginBottom: 8, textAlign: "center" }}>نتائج الجولة</div>
+            {[...data.scores].sort((a, b) => b.roundScore - a.roundScore).map((p) => (
+              <div key={p.token} style={{
+                display: "flex", alignItems: "center", gap: 8, padding: "6px 0",
+                borderBottom: "1px solid rgba(255,255,255,0.03)",
+              }}>
+                <span style={{ fontSize: 16 }}>{p.avatar}</span>
+                <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: p.token === token ? C.green : "#fff" }}>{p.name}</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: C.gold }}>+{p.roundScore}</span>
+                {roundWinner === p.token && <span style={{ fontSize: 14 }}>✅</span>}
+              </div>
+            ))}
+          </Card>
+        )}
+
+        <div style={{ textAlign: "center", fontSize: 13, color: C.muted, animation: "pulse 1.5s infinite" }}>
+          ⏳ الجولة التالية قريباً...
+        </div>
+      </div>
+    );
+  }
+
+  // --- Normal elimination mode ---
   return (
     <div style={{ animation: "fadeIn 0.3s ease" }}>
       <div style={{ textAlign: "center", marginBottom: 16 }}>

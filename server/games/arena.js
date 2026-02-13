@@ -35,6 +35,10 @@ export function startArena(io, room) {
     phase: "countdown",
     challengeData: null, // server-side challenge data
     timerEnd: 0,
+    isTwoPlayer: players.length === 2,
+    finals: false,
+    finalsWins: {},
+    finalsRound: 0,
   };
 
   activeGames.set(room.code, game);
@@ -269,6 +273,13 @@ export function handleArenaSubmit(io, socket, data) {
   }
 }
 
+function getFinalsChallenge(game) {
+  const used = game.rounds.map((r) => r.type);
+  const available = ARENA_CHALLENGES.filter((c) => !used.includes(c.type));
+  if (available.length > 0) return shuffle([...available])[0];
+  return shuffle([...ARENA_CHALLENGES])[0];
+}
+
 function finishRound(io, roomCode) {
   const game = activeGames.get(roomCode);
   if (!game || game.phase === "elimination") return;
@@ -284,12 +295,81 @@ function finishRound(io, roomCode) {
   });
 
   const alivePlayers = game.players.filter((p) => p.alive);
+  const roomId = `room:${roomCode}`;
 
   if (alivePlayers.length <= 1) {
     endGame(io, roomCode);
     return;
   }
 
+  // --- Finals mode: only if the game started with exactly 2 players ---
+  if (game.isTwoPlayer) {
+    // Determine round winner (highest roundScore)
+    const sorted = [...alivePlayers].sort((a, b) => b.roundScore - a.roundScore);
+    const roundWinner = sorted[0];
+
+    if (!game.finals) {
+      // First round finished — enter finals mode
+      game.finals = true;
+      game.finalsRound = 1;
+      game.finalsWins = {};
+      alivePlayers.forEach((p) => { game.finalsWins[p.token] = 0; });
+      game.finalsWins[roundWinner.token]++;
+
+      io.to(roomId).emit("arena:finals-start", {
+        players: alivePlayers.map((p) => ({
+          token: p.token,
+          name: p.name,
+          avatar: p.avatar,
+          score: p.score,
+        })),
+        firstRoundWinner: roundWinner.token,
+        finalsWins: { ...game.finalsWins },
+      });
+    } else {
+      // Subsequent finals rounds
+      game.finalsRound++;
+      game.finalsWins[roundWinner.token]++;
+
+      io.to(roomId).emit("arena:round-result", {
+        roundIdx: game.roundIdx,
+        scores: alivePlayers.map((p) => ({
+          token: p.token,
+          name: p.name,
+          avatar: p.avatar,
+          roundScore: p.roundScore,
+          totalScore: p.score,
+        })),
+        eliminated: [],
+        remaining: alivePlayers.map((p) => ({
+          token: p.token,
+          name: p.name,
+          avatar: p.avatar,
+          score: p.score,
+        })),
+        finals: true,
+        finalsWins: { ...game.finalsWins },
+        finalsRound: game.finalsRound,
+        roundWinner: roundWinner.token,
+      });
+    }
+
+    // Check if someone reached 2 wins
+    const winner = Object.entries(game.finalsWins).find(([, w]) => w >= 2);
+    if (winner) {
+      setTimeout(() => endGame(io, roomCode), 4000);
+    } else {
+      // Generate a new challenge and continue
+      setTimeout(() => {
+        const nextChallenge = getFinalsChallenge(game);
+        game.rounds.push(nextChallenge);
+        startRound(io, roomCode, game.rounds.length - 1);
+      }, 4000);
+    }
+    return;
+  }
+
+  // --- Normal elimination (3+ players) ---
   // Sort by roundScore ascending (worst first)
   const sorted = [...alivePlayers].sort((a, b) => {
     if (a.roundScore !== b.roundScore) return a.roundScore - b.roundScore;
@@ -311,7 +391,6 @@ function finishRound(io, roomCode) {
 
   const remaining = game.players.filter((p) => p.alive);
 
-  const roomId = `room:${roomCode}`;
   io.to(roomId).emit("arena:round-result", {
     roundIdx: game.roundIdx,
     scores: alivePlayers.map((p) => ({
