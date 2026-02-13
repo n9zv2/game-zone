@@ -223,12 +223,8 @@ function revealAndEliminate(io, roomCode) {
   if (wrongPlayers.length > 0) {
     // Everyone who got it wrong is eliminated
     wrongPlayers.forEach((p) => toEliminate.push(p));
-  } else if (correctPlayers.length > 1) {
-    // All correct — eliminate the slowest (least answerTime = slowest, since answerTime = timeRemaining)
-    const sorted = [...correctPlayers].sort((a, b) => a.answerTime - b.answerTime);
-    // Slowest = least time remaining
-    toEliminate.push(sorted[0]);
   }
+  // All correct — no one gets eliminated, game continues
 
   // Never eliminate everyone — keep at least 1
   if (toEliminate.length >= alivePlayers.length) {
