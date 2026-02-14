@@ -31,6 +31,10 @@ import {
   handleDiscussionAction, handleSecretWordHint, handleFaceOffAnswer,
   handleNightAction, handleChatMessage,
 } from "./games/fitna.js";
+import {
+  startSalfa, handleHint, handleVoteRequest, handleVote as handleSalfaVote,
+  handleSpyGuess,
+} from "./games/salfa.js";
 
 const app = express();
 const server = createServer(app);
@@ -175,6 +179,8 @@ io.on("connection", (socket) => {
         startArena(io, room);
       } else if (gameType === "fitna") {
         startFitna(io, room, settings || {});
+      } else if (gameType === "salfa") {
+        startSalfa(io, room, settings || {});
       }
     }, 500);
 
@@ -226,6 +232,23 @@ io.on("connection", (socket) => {
 
   socket.on("fitna:night-action", (data) => {
     handleNightAction(io, socket, data);
+  });
+
+  // Salfa events
+  socket.on("salfa:hint", (data) => {
+    handleHint(io, socket, data);
+  });
+
+  socket.on("salfa:vote-request", (data) => {
+    handleVoteRequest(io, socket, data);
+  });
+
+  socket.on("salfa:vote", (data) => {
+    handleSalfaVote(io, socket, data);
+  });
+
+  socket.on("salfa:spy-guess", (data) => {
+    handleSpyGuess(io, socket, data);
   });
 
   // Reactions
