@@ -26,6 +26,11 @@ import {
   handleLifeline,
 } from "./games/pyramid.js";
 import { startArena, handleArenaSubmit } from "./games/arena.js";
+import {
+  startFitna, handleFitnaAction, handleFitnaCard, handleFitnaVote,
+  handleDiscussionAction, handleSecretWordHint, handleFaceOffAnswer,
+  handleNightAction, handleChatMessage,
+} from "./games/fitna.js";
 
 const app = express();
 const server = createServer(app);
@@ -152,7 +157,7 @@ io.on("connection", (socket) => {
     }, 600);
   });
 
-  socket.on("room:start-game", ({ token, code, gameType }, cb) => {
+  socket.on("room:start-game", ({ token, code, gameType, settings }, cb) => {
     const result = startGame(code, token, gameType);
     if (result.error) return cb?.({ error: result.error });
 
@@ -168,6 +173,8 @@ io.on("connection", (socket) => {
         startPyramid(io, room);
       } else if (gameType === "arena") {
         startArena(io, room);
+      } else if (gameType === "fitna") {
+        startFitna(io, room, settings || {});
       }
     }, 500);
 
@@ -186,6 +193,39 @@ io.on("connection", (socket) => {
   // Arena events
   socket.on("arena:submit", (data) => {
     handleArenaSubmit(io, socket, data);
+  });
+
+  // Fitna events
+  socket.on("fitna:action", (data) => {
+    handleFitnaAction(io, socket, data);
+  });
+
+  socket.on("fitna:card", (data) => {
+    handleFitnaCard(io, socket, data);
+  });
+
+  socket.on("fitna:vote", (data) => {
+    handleFitnaVote(io, socket, data);
+  });
+
+  socket.on("fitna:discussion-action", (data) => {
+    handleDiscussionAction(io, socket, data);
+  });
+
+  socket.on("fitna:chat-message", (data) => {
+    handleChatMessage(io, socket, data);
+  });
+
+  socket.on("fitna:secret-word-hint", (data) => {
+    handleSecretWordHint(io, socket, data);
+  });
+
+  socket.on("fitna:face-off-answer", (data) => {
+    handleFaceOffAnswer(io, socket, data);
+  });
+
+  socket.on("fitna:night-action", (data) => {
+    handleNightAction(io, socket, data);
   });
 
   // Reactions

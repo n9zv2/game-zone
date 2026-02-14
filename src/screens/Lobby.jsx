@@ -7,6 +7,19 @@ import PlayerAvatar from "../components/PlayerAvatar.jsx";
 import useSocket from "../hooks/useSocket.js";
 import socket from "../socket.js";
 
+const FITNA_DEFAULTS = [
+  { min: 4,  max: 5,  saboteurs: 1, detectives: 1 },
+  { min: 6,  max: 8,  saboteurs: 2, detectives: 1 },
+  { min: 9,  max: 12, saboteurs: 2, detectives: 1 },
+  { min: 13, max: 16, saboteurs: 3, detectives: 1 },
+  { min: 17, max: 20, saboteurs: 3, detectives: 2 },
+];
+
+function getFitnaDefaults(count) {
+  const e = FITNA_DEFAULTS.find(d => count >= d.min && count <= d.max);
+  return e || { saboteurs: 1, detectives: 1 };
+}
+
 export default function Lobby({ token, roomCode, initialPlayers, isHost: initialIsHost, onLeave, onGameStart }) {
   const [players, setPlayers] = useState(initialPlayers || []);
   const [isHost, setIsHost] = useState(initialIsHost);
@@ -14,6 +27,12 @@ export default function Lobby({ token, roomCode, initialPlayers, isHost: initial
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [starting, setStarting] = useState(false);
+  // Fitna settings
+  const [fitnaCustom, setFitnaCustom] = useState(false);
+  const [fitnaSaboteurs, setFitnaSaboteurs] = useState(0);
+  const [fitnaDetectives, setFitnaDetectives] = useState(0);
+  const [fitnaDiscussionTime, setFitnaDiscussionTime] = useState(60);
+  const [fitnaVoteTime, setFitnaVoteTime] = useState(30);
 
   useSocket("room:player-joined", useCallback((data) => {
     setPlayers(data.players);
@@ -82,7 +101,16 @@ export default function Lobby({ token, roomCode, initialPlayers, isHost: initial
   const startGame = () => {
     setStarting(true);
     setError("");
-    socket.emit("room:start-game", { token, code: roomCode, gameType: selectedGame }, (res) => {
+    const payload = { token, code: roomCode, gameType: selectedGame };
+    if (selectedGame === "fitna") {
+      payload.settings = {
+        saboteurCount: fitnaCustom ? fitnaSaboteurs : 0,
+        detectiveCount: fitnaCustom ? fitnaDetectives : 0,
+        discussionTime: fitnaDiscussionTime,
+        voteTime: fitnaVoteTime,
+      };
+    }
+    socket.emit("room:start-game", payload, (res) => {
       setStarting(false);
       if (res?.error) setError(res.error);
     });
@@ -147,8 +175,9 @@ export default function Lobby({ token, roomCode, initialPlayers, isHost: initial
           <div style={{ fontSize: 13, fontWeight: 700, color: C.muted, marginBottom: 8 }}>🎮 اختر اللعبة</div>
           <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
             {[
-              { id: "pyramid", icon: "🔺", name: "الهرم", color: C.red },
-              { id: "arena", icon: "⚔️", name: "الحلبة", color: C.orange },
+              { id: "pyramid", icon: "🔺", name: "الهرم", color: C.red, min: 2 },
+              { id: "arena", icon: "⚔️", name: "الحلبة", color: C.orange, min: 2 },
+              { id: "fitna", icon: "🎭", name: "فتنة", color: C.purple, min: 4 },
             ].map((g) => (
               <Card key={g.id} onClick={() => setSelectedGame(g.id)} glow={selectedGame === g.id} color={g.color} style={{
                 flex: 1, textAlign: "center", padding: 14, cursor: "pointer",
@@ -156,19 +185,121 @@ export default function Lobby({ token, roomCode, initialPlayers, isHost: initial
               }}>
                 <div style={{ fontSize: 32, marginBottom: 4 }}>{g.icon}</div>
                 <div style={{ fontSize: 14, fontWeight: 800, color: g.color }}>{g.name}</div>
+                <div style={{ fontSize: 9, color: C.muted }}>{g.min}+ لاعب</div>
               </Card>
             ))}
           </div>
 
+          {/* Fitna Settings */}
+          {selectedGame === "fitna" && (
+            <Card style={{ marginBottom: 12, padding: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.purple, marginBottom: 10 }}>⚙️ إعدادات فتنة</div>
+
+              {/* Auto/Custom toggle */}
+              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                <button onClick={() => setFitnaCustom(false)} style={{
+                  flex: 1, padding: "6px 8px", border: `1px solid ${!fitnaCustom ? C.purple : C.border}`,
+                  borderRadius: 8, background: !fitnaCustom ? `${C.purple}20` : "transparent",
+                  color: !fitnaCustom ? C.purple : C.muted, fontSize: 12, fontWeight: 700,
+                  cursor: "pointer", fontFamily: "inherit",
+                }}>تلقائي</button>
+                <button onClick={() => setFitnaCustom(true)} style={{
+                  flex: 1, padding: "6px 8px", border: `1px solid ${fitnaCustom ? C.purple : C.border}`,
+                  borderRadius: 8, background: fitnaCustom ? `${C.purple}20` : "transparent",
+                  color: fitnaCustom ? C.purple : C.muted, fontSize: 12, fontWeight: 700,
+                  cursor: "pointer", fontFamily: "inherit",
+                }}>يدوي</button>
+              </div>
+
+              {!fitnaCustom && (() => {
+                const d = getFitnaDefaults(connectedCount);
+                return (
+                  <div style={{ fontSize: 11, color: C.muted, textAlign: "center", marginBottom: 8 }}>
+                    {connectedCount} لاعب → {d.saboteurs} خائن، {d.detectives} محقق
+                  </div>
+                );
+              })()}
+
+              {fitnaCustom && (
+                <div style={{ display: "flex", gap: 12, marginBottom: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>خونة</div>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      {[1, 2, 3, 4].map((n) => (
+                        <button key={n} onClick={() => setFitnaSaboteurs(n)} style={{
+                          flex: 1, padding: "6px 0", border: `1px solid ${fitnaSaboteurs === n ? C.red : C.border}`,
+                          borderRadius: 6, background: fitnaSaboteurs === n ? `${C.red}20` : "transparent",
+                          color: fitnaSaboteurs === n ? C.red : C.muted, fontSize: 13, fontWeight: 800,
+                          cursor: "pointer", fontFamily: "inherit",
+                        }}>{n}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>محققين</div>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      {[0, 1, 2].map((n) => (
+                        <button key={n} onClick={() => setFitnaDetectives(n)} style={{
+                          flex: 1, padding: "6px 0", border: `1px solid ${fitnaDetectives === n ? C.cyan : C.border}`,
+                          borderRadius: 6, background: fitnaDetectives === n ? `${C.cyan}20` : "transparent",
+                          color: fitnaDetectives === n ? C.cyan : C.muted, fontSize: 13, fontWeight: 800,
+                          cursor: "pointer", fontFamily: "inherit",
+                        }}>{n}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Discussion & Vote time */}
+              <div style={{ display: "flex", gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>وقت النقاش</div>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {[30, 60, 90].map((t) => (
+                      <button key={t} onClick={() => setFitnaDiscussionTime(t)} style={{
+                        flex: 1, padding: "6px 0", border: `1px solid ${fitnaDiscussionTime === t ? C.green : C.border}`,
+                        borderRadius: 6, background: fitnaDiscussionTime === t ? `${C.green}20` : "transparent",
+                        color: fitnaDiscussionTime === t ? C.green : C.muted, fontSize: 11, fontWeight: 700,
+                        cursor: "pointer", fontFamily: "inherit",
+                      }}>{t}s</button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>وقت التصويت</div>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {[15, 30, 45].map((t) => (
+                      <button key={t} onClick={() => setFitnaVoteTime(t)} style={{
+                        flex: 1, padding: "6px 0", border: `1px solid ${fitnaVoteTime === t ? C.gold : C.border}`,
+                        borderRadius: 6, background: fitnaVoteTime === t ? `${C.gold}20` : "transparent",
+                        color: fitnaVoteTime === t ? C.gold : C.muted, fontSize: 11, fontWeight: 700,
+                        cursor: "pointer", fontFamily: "inherit",
+                      }}>{t}s</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
+
           {error && <div style={{ textAlign: "center", color: C.red, fontSize: 13, fontWeight: 700, marginBottom: 8 }}>❌ {error}</div>}
 
-          <Btn
-            color={selectedGame === "pyramid" ? C.red : C.orange}
-            onClick={startGame}
-            disabled={connectedCount < 2 || starting}
-          >
-            {starting ? "جاري البدء..." : connectedCount < 2 ? "يحتاج 2 لاعبين على الأقل" : `🚀 ابدأ ${selectedGame === "pyramid" ? "الهرم" : "الحلبة"}!`}
-          </Btn>
+          {(() => {
+            const minPlayers = selectedGame === "fitna" ? 4 : 2;
+            const gameColors = { pyramid: C.red, arena: C.orange, fitna: C.purple };
+            const gameNames = { pyramid: "الهرم", arena: "الحلبة", fitna: "فتنة" };
+            const notEnough = connectedCount < minPlayers;
+            return (
+              <Btn
+                color={gameColors[selectedGame]}
+                onClick={startGame}
+                disabled={notEnough || starting}
+              >
+                {starting ? "جاري البدء..." : notEnough ? `يحتاج ${minPlayers} لاعبين على الأقل` : `🚀 ابدأ ${gameNames[selectedGame]}!`}
+              </Btn>
+            );
+          })()}
         </div>
       ) : (
         <Card style={{ textAlign: "center", padding: 24 }}>
