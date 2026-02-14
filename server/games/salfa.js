@@ -10,7 +10,11 @@ const activeGames = new Map();
 // ============================================================
 export function startSalfa(io, room, settings = {}) {
   const connectedPlayers = room.players.filter((p) => p.connected);
-  if (connectedPlayers.length < 3) return;
+  if (connectedPlayers.length < 3) {
+    // Not enough players — return room to lobby
+    finishGame(room.code);
+    return;
+  }
 
   const playerCount = connectedPlayers.length;
   const totalRounds = Math.max(1, Math.min(7, settings.rounds || 3));
