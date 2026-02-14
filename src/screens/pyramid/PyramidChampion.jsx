@@ -3,7 +3,47 @@ import Card from "../../components/ui/Card.jsx";
 import Btn from "../../components/ui/Btn.jsx";
 import Confetti from "../../components/ui/Confetti.jsx";
 
+const DIFFICULTY_LABELS = {
+  easy: "سهل",
+  medium: "متوسط",
+  hard: "صعب",
+  extreme: "خبير",
+};
+
+const DIFFICULTY_COLORS = {
+  easy: C.green,
+  medium: C.gold,
+  hard: C.orange,
+  extreme: C.red,
+};
+
 export default function PyramidChampion({ data, token, onFinish }) {
+  // --- Solo mode display ---
+  if (data.solo) {
+    const player = data.rankings[0];
+    const diffLabel = DIFFICULTY_LABELS[data.difficulty] || data.difficulty;
+    const diffColor = DIFFICULTY_COLORS[data.difficulty] || C.muted;
+
+    return (
+      <div style={{ textAlign: "center", paddingTop: 20, animation: "fadeIn 0.3s ease" }}>
+        <div style={{ fontSize: "min(80px, 18vw)", marginBottom: 8 }}>🎯</div>
+        <h1 style={{ fontSize: 28, fontWeight: 900, margin: "0 0 12px", color: C.text }}>خلصت!</h1>
+
+        <Card glow color={C.gold} style={{ marginBottom: 20, padding: "24px 20px" }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.gold, marginBottom: 16 }}>⭐ {player.score} نقطة</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 8 }}>📊 وصلت للراوند {data.maxRound}</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: diffColor }}>مستوى الصعوبة: {diffLabel}</div>
+        </Card>
+
+        <div style={{ display: "flex", gap: 10, flexDirection: "column" }}>
+          <Btn color={C.green} onClick={() => onFinish(data.rankings)}>🔄 مرة ثانية</Btn>
+          <Btn dark onClick={() => onFinish(data.rankings)}>🏠 رجوع</Btn>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Normal multiplayer display ---
   const isChamp = data.champion.token === token;
   const myRank = data.rankings.find((r) => r.token === token);
 

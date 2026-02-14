@@ -128,6 +128,30 @@ io.on("connection", (socket) => {
     cb?.({ ok: true });
   });
 
+  // Solo mode — create room, mark solo, start pyramid after client is ready
+  socket.on("room:solo-start", ({ token }, cb) => {
+    const session = getSession(token);
+    if (!session) return cb?.({ error: "جلسة غير صالحة" });
+
+    const room = createRoom(token, session.name, session.avatar);
+    room.solo = true;
+    setPlayerSocket(room.code, token, socket.id);
+    socket.join(`room:${room.code}`);
+    currentRoom = room.code;
+    currentToken = token;
+
+    const result = startGame(room.code, token, "pyramid");
+    if (result.error) return cb?.({ error: result.error });
+
+    // Send room code first so client navigates to pyramid screen
+    cb?.({ code: room.code });
+
+    // Delay start so PyramidGame component mounts and listens for events
+    setTimeout(() => {
+      startPyramid(io, room);
+    }, 600);
+  });
+
   socket.on("room:start-game", ({ token, code, gameType }, cb) => {
     const result = startGame(code, token, gameType);
     if (result.error) return cb?.({ error: result.error });

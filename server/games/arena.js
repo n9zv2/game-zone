@@ -1,9 +1,10 @@
 import { shuffle } from "../utils.js";
 import {
   ARENA_CHALLENGES,
-  MATH_PROBLEMS,
+  TRUE_FALSE_STATEMENTS,
   WORD_PUZZLES,
   COLOR_NAMES,
+  EMOJI_PAIRS,
 } from "../data/challenges.js";
 import { finishGame } from "../roomManager.js";
 import { addScore } from "../sessionManager.js";
@@ -25,7 +26,9 @@ export function startArena(io, room) {
       submitData: null,
     }));
 
-  const rounds = shuffle(ARENA_CHALLENGES).slice(0, 5);
+  const elimPerRound = players.length >= 10 ? 2 : 1;
+  const roundsNeeded = Math.min(ARENA_CHALLENGES.length, Math.max(5, Math.ceil(players.length * 1.2)));
+  const rounds = shuffle([...ARENA_CHALLENGES]).slice(0, Math.min(roundsNeeded, ARENA_CHALLENGES.length));
 
   const game = {
     roomCode: room.code,
@@ -33,9 +36,9 @@ export function startArena(io, room) {
     rounds,
     roundIdx: 0,
     phase: "countdown",
-    challengeData: null, // server-side challenge data
+    challengeData: null,
     timerEnd: 0,
-    isTwoPlayer: players.length === 2,
+    elimPerRound,
     finals: false,
     finalsWins: {},
     finalsRound: 0,
@@ -132,12 +135,14 @@ function sendChallenge(io, roomCode) {
       serverData = { sequence: seq };
       break;
     }
-    case "math": {
-      const gen =
-        MATH_PROBLEMS[Math.floor(Math.random() * MATH_PROBLEMS.length)];
-      const problem = gen();
-      clientData = { type: "math", question: problem.q, time };
-      serverData = { answer: problem.ans };
+    case "truefalse": {
+      const picked = shuffle([...TRUE_FALSE_STATEMENTS]).slice(0, 5);
+      clientData = {
+        type: "truefalse",
+        statements: picked.map((s) => ({ text: s.text })),
+        time,
+      };
+      serverData = { answers: picked.map((s) => s.answer) };
       break;
     }
     case "reaction": {
@@ -160,11 +165,12 @@ function sendChallenge(io, roomCode) {
     case "word": {
       const puzzle =
         WORD_PUZZLES[Math.floor(Math.random() * WORD_PUZZLES.length)];
-      const scrambled = shuffle(puzzle.word.split("")).join("");
+      const scrambledLetters = shuffle(puzzle.word.split(""));
       clientData = {
         type: "word",
-        scrambled,
+        scrambledLetters,
         category: puzzle.category,
+        letterCount: puzzle.word.length,
         time,
       };
       serverData = { word: puzzle.word };
@@ -183,11 +189,30 @@ function sendChallenge(io, roomCode) {
         type: "color",
         textName: actual.name,
         textColor: display.hex,
-        correctHex: display.hex,
         options: opts.map((o) => ({ name: o.name, hex: o.hex })),
         time,
       };
       serverData = { correctHex: display.hex };
+      break;
+    }
+    case "emoji_spot": {
+      const pair = EMOJI_PAIRS[Math.floor(Math.random() * EMOJI_PAIRS.length)];
+      const oddPos = Math.floor(Math.random() * 16);
+      const grid = Array.from({ length: 16 }, (_, i) =>
+        i === oddPos ? pair.odd : pair.normal
+      );
+      clientData = { type: "emoji_spot", grid, time };
+      serverData = { oddPosition: oddPos };
+      break;
+    }
+    case "number_sort": {
+      const nums = new Set();
+      while (nums.size < 5) nums.add(Math.floor(Math.random() * 99) + 1);
+      const numbers = [...nums];
+      const sorted = [...numbers].sort((a, b) => a - b);
+      const shuffled = shuffle([...numbers]);
+      clientData = { type: "number_sort", numbers: shuffled, time };
+      serverData = { sorted };
       break;
     }
   }
@@ -235,9 +260,14 @@ export function handleArenaSubmit(io, socket, data) {
       player.roundScore = correct ? 300 : 0;
       break;
     }
-    case "math": {
-      const correct = parseInt(result.answer) === game.challengeData.answer;
-      player.roundScore = correct ? 200 + Math.floor(timeLeft * 20) : 0;
+    case "truefalse": {
+      const answers = game.challengeData.answers;
+      const playerAnswers = result.answers || [];
+      let correctCount = 0;
+      for (let i = 0; i < answers.length; i++) {
+        if (playerAnswers[i] === answers[i]) correctCount++;
+      }
+      player.roundScore = correctCount * 50 + Math.floor(timeLeft * 10);
       break;
     }
     case "reaction": {
@@ -251,12 +281,25 @@ export function handleArenaSubmit(io, socket, data) {
       break;
     }
     case "word": {
-      const correct = result.word === game.challengeData.word;
+      const selected = (result.selectedLetters || []).join("");
+      const correct = selected === game.challengeData.word;
       player.roundScore = correct ? 250 + Math.floor(timeLeft * 15) : 0;
       break;
     }
     case "color": {
       const correct = result.colorHex === game.challengeData.correctHex;
+      player.roundScore = correct ? 250 + Math.floor(timeLeft * 20) : 0;
+      break;
+    }
+    case "emoji_spot": {
+      const correct = result.position === game.challengeData.oddPosition;
+      player.roundScore = correct ? 200 + Math.floor(timeLeft * 30) : 0;
+      break;
+    }
+    case "number_sort": {
+      const playerOrder = result.order || [];
+      const sorted = game.challengeData.sorted;
+      const correct = playerOrder.length === sorted.length && playerOrder.every((v, i) => v === sorted[i]);
       player.roundScore = correct ? 250 + Math.floor(timeLeft * 20) : 0;
       break;
     }
@@ -302,8 +345,8 @@ function finishRound(io, roomCode) {
     return;
   }
 
-  // --- Finals mode: only if the game started with exactly 2 players ---
-  if (game.isTwoPlayer) {
+  // --- Finals mode: any game that reaches 2 alive players ---
+  if (alivePlayers.length === 2) {
     // Determine round winner (highest roundScore)
     const sorted = [...alivePlayers].sort((a, b) => b.roundScore - a.roundScore);
     const roundWinner = sorted[0];
@@ -376,14 +419,8 @@ function finishRound(io, roomCode) {
     return a.score - b.score;
   });
 
-  const elimCount = Math.max(
-    1,
-    Math.floor(alivePlayers.length * 0.3)
-  );
-  const toEliminate = sorted.slice(
-    0,
-    Math.min(elimCount, alivePlayers.length - 1)
-  );
+  const elimCount = Math.min(game.elimPerRound, alivePlayers.length - 2);
+  const toEliminate = sorted.slice(0, Math.max(1, elimCount));
 
   toEliminate.forEach((p) => {
     p.alive = false;
@@ -415,11 +452,13 @@ function finishRound(io, roomCode) {
   });
 
   setTimeout(() => {
-    if (
-      remaining.length <= 1 ||
-      game.roundIdx + 1 >= game.rounds.length
-    ) {
+    if (remaining.length <= 1) {
       endGame(io, roomCode);
+    } else if (game.roundIdx + 1 >= game.rounds.length) {
+      // Dynamic round generation — add a new challenge
+      const nextChallenge = getFinalsChallenge(game);
+      game.rounds.push(nextChallenge);
+      startRound(io, roomCode, game.rounds.length - 1);
     } else {
       startRound(io, roomCode, game.roundIdx + 1);
     }

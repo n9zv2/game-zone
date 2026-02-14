@@ -104,7 +104,7 @@ export default function ArenaGame({ token, roomCode, onFinish }) {
     if (phase === "round-intro" && roundInfo) {
       return (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "70vh", animation: "fadeIn 0.3s ease" }}>
-          <Badge color={C.muted}>جولة {roundInfo.roundIdx + 1} / {roundInfo.totalRounds}</Badge>
+          <Badge color={C.muted}>جولة {roundInfo.roundIdx + 1}</Badge>
           <div style={{ fontSize: 70, margin: "20px 0 12px", animation: "pulse 1s infinite" }}>{roundInfo.icon}</div>
           <h2 style={{ fontSize: 28, fontWeight: 900, color: C.orange, margin: "0 0 6px" }}>{roundInfo.name}</h2>
           <p style={{ color: C.muted, fontSize: 14, marginBottom: 12 }}>{roundInfo.desc}</p>

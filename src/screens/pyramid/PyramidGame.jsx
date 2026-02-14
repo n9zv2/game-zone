@@ -29,6 +29,9 @@ export default function PyramidGame({ token, roomCode, onFinish }) {
   const [myLevel, setMyLevel] = useState(0);
   const [spectatorRoundData, setSpectatorRoundData] = useState(null);
   const [spectatorRevealData, setSpectatorRevealData] = useState(null);
+  const [answeredTokens, setAnsweredTokens] = useState(new Set());
+  const [answerProgress, setAnswerProgress] = useState({ answeredCount: 0, totalAlive: 0 });
+  const [alivePlayers, setAlivePlayers] = useState([]);
 
   useSocket("pyramid:start", useCallback((data) => {
     setPlayers(data.players);
@@ -45,6 +48,8 @@ export default function PyramidGame({ token, roomCode, onFinish }) {
       // Dead player receiving spectator view
       setSpectatorRoundData(data);
       setSpectatorRevealData(null);
+      setAnsweredTokens(new Set());
+      setAnswerProgress({ answeredCount: 0, totalAlive: 0 });
     } else {
       setQuestionData(data);
       setRevealData(null);
@@ -53,9 +58,15 @@ export default function PyramidGame({ token, roomCode, onFinish }) {
     }
   }, []));
 
+  useSocket("pyramid:player-answered", useCallback((data) => {
+    setAnsweredTokens((prev) => new Set([...prev, data.token]));
+    setAnswerProgress({ answeredCount: data.answeredCount, totalAlive: data.totalAlive });
+  }, []));
+
   useSocket("pyramid:round-result", useCallback((data) => {
     setRevealData(data);
     setSpectatorRevealData(data);
+    if (data.alivePlayers) setAlivePlayers(data.alivePlayers);
     // After showing answer, transition to elimination view
     setTimeout(() => {
       setElimData(data);
@@ -128,6 +139,11 @@ export default function PyramidGame({ token, roomCode, onFinish }) {
           revealData={spectatorRevealData}
           roomCode={roomCode}
           token={token}
+          answeredTokens={answeredTokens}
+          answerProgress={answerProgress}
+          alivePlayers={alivePlayers}
+          totalPlayers={players.length}
+          totalRounds={totalRounds}
         />
       );
     }

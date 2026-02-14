@@ -5,141 +5,101 @@
 export const ARENA_CHALLENGES = [
   { type: "speed_tap", name: "سرعة الضغط", icon: "⚡", desc: "اضغط أسرع ما تقدر!", time: 8 },
   { type: "memory", name: "اختبار الذاكرة", icon: "🧠", desc: "تذكر التسلسل الصحيح!", time: 15 },
-  { type: "math", name: "رياضيات سريعة", icon: "🔢", desc: "حل المسألة قبل الوقت!", time: 10 },
+  { type: "truefalse", name: "صح ولا غلط", icon: "✅", desc: "صح ولا غلط؟ جاوب بسرعة!", time: 15 },
+  { type: "emoji_spot", name: "اكتشف المختلف", icon: "👀", desc: "لقّ الإيموجي المختلف!", time: 10 },
+  { type: "number_sort", name: "رتّب الأرقام", icon: "🔢", desc: "رتّب الأرقام من الأصغر للأكبر!", time: 12 },
   { type: "reaction", name: "ردة الفعل", icon: "🎯", desc: "اضغط لمن يتحول أخضر!", time: 10 },
   { type: "word", name: "رتّب الحروف", icon: "🔤", desc: "رتب الحروف المبعثرة!", time: 15 },
   { type: "color", name: "تحدي الألوان", icon: "🎨", desc: "اختر اللون الصحيح مو الكلمة!", time: 8 },
 ];
 
 // ============================================================
-// MATH_PROBLEMS — 16 generator functions with varying difficulty
-// Each returns { q: string, ans: number }
+// TRUE_FALSE_STATEMENTS — Arabic true/false statements
+// Each: { text: string, answer: boolean }
 // ============================================================
 
-export const MATH_PROBLEMS = [
-  // 1. Easy addition (single/double digit)
-  () => {
-    const a = Math.floor(Math.random() * 20) + 1;
-    const b = Math.floor(Math.random() * 20) + 1;
-    return { q: `${a} + ${b} = ?`, ans: a + b };
-  },
+export const TRUE_FALSE_STATEMENTS = [
+  // جغرافيا
+  { text: "عاصمة مصر هي القاهرة", answer: true },
+  { text: "أكبر دولة في العالم من حيث المساحة هي كندا", answer: false },
+  { text: "نهر النيل هو أطول نهر في العالم", answer: true },
+  { text: "اليابان تقع في قارة أوروبا", answer: false },
+  { text: "البحر الميت هو أخفض نقطة على سطح الأرض", answer: true },
+  { text: "جبل إيفرست هو أعلى جبل في العالم", answer: true },
+  { text: "أستراليا هي أصغر قارة في العالم", answer: true },
+  { text: "عاصمة تركيا هي إسطنبول", answer: false },
+  { text: "المحيط الهادئ هو أكبر محيط في العالم", answer: true },
+  { text: "صحراء الربع الخالي تقع في شمال أفريقيا", answer: false },
 
-  // 2. Hard addition (double/triple digit)
-  () => {
-    const a = Math.floor(Math.random() * 400) + 50;
-    const b = Math.floor(Math.random() * 400) + 50;
-    return { q: `${a} + ${b} = ?`, ans: a + b };
-  },
+  // علوم
+  { text: "الماء يتكون من الهيدروجين والأكسجين", answer: true },
+  { text: "الشمس تدور حول الأرض", answer: false },
+  { text: "سرعة الضوء أسرع من سرعة الصوت", answer: true },
+  { text: "الذهب ينجذب للمغناطيس", answer: false },
+  { text: "درجة غليان الماء هي 100 درجة مئوية", answer: true },
+  { text: "الأكسجين هو أكثر غاز في الغلاف الجوي", answer: false },
+  { text: "القمر ليس له غلاف جوي", answer: true },
+  { text: "البرق أسرع من الرعد", answer: true },
+  { text: "الألماس أصلب مادة طبيعية على الأرض", answer: true },
+  { text: "كوكب المريخ هو أقرب كوكب للشمس", answer: false },
 
-  // 3. Easy subtraction (positive result)
-  () => {
-    const b = Math.floor(Math.random() * 15) + 1;
-    const a = b + Math.floor(Math.random() * 20) + 1;
-    return { q: `${a} - ${b} = ?`, ans: a - b };
-  },
+  // حيوانات
+  { text: "الحوت الأزرق هو أكبر حيوان على الأرض", answer: true },
+  { text: "النعامة تستطيع الطيران", answer: false },
+  { text: "الأخطبوط له ثلاثة قلوب", answer: true },
+  { text: "الضفدع من الزواحف", answer: false },
+  { text: "الدولفين من الثدييات", answer: true },
+  { text: "العنكبوت له ستة أرجل", answer: false },
+  { text: "الجمل يخزن الماء في سنامه", answer: false },
+  { text: "النحلة تموت بعد ما تلسع", answer: true },
+  { text: "التمساح يستطيع تحريك فكه العلوي", answer: false },
+  { text: "الفيل هو أكبر حيوان بري", answer: true },
 
-  // 4. Hard subtraction (larger numbers, positive result)
-  () => {
-    const b = Math.floor(Math.random() * 200) + 30;
-    const a = b + Math.floor(Math.random() * 300) + 50;
-    return { q: `${a} - ${b} = ?`, ans: a - b };
-  },
+  // رياضة
+  { text: "كرة القدم فيها 11 لاعب بكل فريق", answer: true },
+  { text: "أول كأس عالم كانت سنة 1950", answer: false },
+  { text: "الأولمبياد تُقام كل أربع سنوات", answer: true },
+  { text: "كرة السلة اخترعها أمريكي", answer: false },
+  { text: "ملعب كرة القدم مستطيل الشكل", answer: true },
 
-  // 5. Easy multiplication (single digit)
-  () => {
-    const a = Math.floor(Math.random() * 9) + 2;
-    const b = Math.floor(Math.random() * 9) + 2;
-    return { q: `${a} × ${b} = ?`, ans: a * b };
-  },
+  // ثقافة عامة
+  { text: "اللغة العربية تُكتب من اليمين لليسار", answer: true },
+  { text: "عدد أيام السنة الكبيسة 366 يوم", answer: true },
+  { text: "الساعة فيها 100 دقيقة", answer: false },
+  { text: "عدد ألوان قوس قزح خمسة", answer: false },
+  { text: "القرآن الكريم فيه 114 سورة", answer: true },
+  { text: "اللون الأبيض يمتص الحرارة أكثر من الأسود", answer: false },
+  { text: "الطماطم من الفواكه علمياً", answer: true },
+  { text: "عدد حروف اللغة العربية 28 حرف", answer: true },
+  { text: "شهر فبراير دائماً 28 يوم", answer: false },
+  { text: "الصين أكثر دولة سكاناً في العالم", answer: false },
+];
 
-  // 6. Hard multiplication (one double digit factor)
-  () => {
-    const a = Math.floor(Math.random() * 12) + 2;
-    const b = Math.floor(Math.random() * 40) + 10;
-    return { q: `${a} × ${b} = ?`, ans: a * b };
-  },
+// ============================================================
+// EMOJI_PAIRS — pairs of similar emojis (normal + odd)
+// ============================================================
 
-  // 7. Division (exact, no remainders)
-  () => {
-    const b = Math.floor(Math.random() * 9) + 2;
-    const ans = Math.floor(Math.random() * 12) + 2;
-    const a = b * ans;
-    return { q: `${a} ÷ ${b} = ?`, ans: ans };
-  },
-
-  // 8. Division (larger numbers, exact)
-  () => {
-    const b = Math.floor(Math.random() * 12) + 3;
-    const ans = Math.floor(Math.random() * 20) + 5;
-    const a = b * ans;
-    return { q: `${a} ÷ ${b} = ?`, ans: ans };
-  },
-
-  // 9. Square roots (small perfect squares 4–81)
-  () => {
-    const root = Math.floor(Math.random() * 8) + 2;
-    const square = root * root;
-    return { q: `√${square} = ?`, ans: root };
-  },
-
-  // 10. Square roots (large perfect squares 121–400)
-  () => {
-    const roots = [11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
-    const root = roots[Math.floor(Math.random() * roots.length)];
-    const square = root * root;
-    return { q: `√${square} = ?`, ans: root };
-  },
-
-  // 11. Percentages (easy)
-  () => {
-    const percentages = [10, 20, 25, 50, 75];
-    const bases = [40, 60, 80, 100, 120, 200, 400, 500, 1000];
-    const pct = percentages[Math.floor(Math.random() * percentages.length)];
-    const base = bases[Math.floor(Math.random() * bases.length)];
-    const ans = (pct / 100) * base;
-    return { q: `ما هو ${pct}% من ${base}؟`, ans: ans };
-  },
-
-  // 12. Percentages (harder)
-  () => {
-    const percentages = [5, 15, 30, 40, 60];
-    const bases = [60, 80, 120, 200, 300, 500];
-    const pct = percentages[Math.floor(Math.random() * percentages.length)];
-    const base = bases[Math.floor(Math.random() * bases.length)];
-    const ans = (pct / 100) * base;
-    return { q: `ما هو ${pct}% من ${base}؟`, ans: ans };
-  },
-
-  // 13. Powers — squares
-  () => {
-    const base = Math.floor(Math.random() * 12) + 2;
-    return { q: `${base}² = ?`, ans: base * base };
-  },
-
-  // 14. Powers — cubes (small bases)
-  () => {
-    const base = Math.floor(Math.random() * 5) + 2;
-    return { q: `${base}³ = ?`, ans: base * base * base };
-  },
-
-  // 15. Mixed operation: (a + b) × c
-  () => {
-    const a = Math.floor(Math.random() * 8) + 2;
-    const b = Math.floor(Math.random() * 8) + 2;
-    const c = Math.floor(Math.random() * 5) + 2;
-    const ans = (a + b) * c;
-    return { q: `(${a} + ${b}) × ${c} = ?`, ans: ans };
-  },
-
-  // 16. Mixed operation: a × b - c
-  () => {
-    const a = Math.floor(Math.random() * 7) + 2;
-    const b = Math.floor(Math.random() * 7) + 2;
-    const c = Math.floor(Math.random() * 10) + 1;
-    const product = a * b;
-    const ans = product - c;
-    return { q: `${a} × ${b} - ${c} = ?`, ans: ans };
-  },
+export const EMOJI_PAIRS = [
+  { normal: "🐶", odd: "🐱" },
+  { normal: "🍎", odd: "🍐" },
+  { normal: "⭐", odd: "🌟" },
+  { normal: "🔴", odd: "🟠" },
+  { normal: "🌸", odd: "🌺" },
+  { normal: "🐟", odd: "🐠" },
+  { normal: "🌙", odd: "☀️" },
+  { normal: "🎵", odd: "🎶" },
+  { normal: "💚", odd: "💛" },
+  { normal: "🦋", odd: "🐛" },
+  { normal: "🍕", odd: "🍔" },
+  { normal: "⚽", odd: "🏀" },
+  { normal: "🐸", odd: "🐢" },
+  { normal: "🌹", odd: "🌻" },
+  { normal: "🍊", odd: "🍋" },
+  { normal: "🐧", odd: "🐦" },
+  { normal: "🎈", odd: "🎀" },
+  { normal: "🔵", odd: "🟣" },
+  { normal: "🍇", odd: "🍓" },
+  { normal: "🦁", odd: "🐯" },
 ];
 
 // ============================================================

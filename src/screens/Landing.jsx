@@ -10,7 +10,7 @@ const HUB_GAMES = [
   { id: "arena", icon: "⚔️", name: "الحلبة", desc: "6 أنواع تحديات مختلفة — الأضعف يطلع!", players: "2-20", color: C.orange },
 ];
 
-export default function Landing({ token, name, avatar, onRoom, onMatchHistory }) {
+export default function Landing({ token, name, avatar, onRoom, onSoloPlay, onMatchHistory }) {
   const [joinCode, setJoinCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -61,6 +61,11 @@ export default function Landing({ token, name, avatar, onRoom, onMatchHistory })
       {/* Create Room */}
       <Btn onClick={createRoom} disabled={loading} style={{ marginBottom: 12 }}>
         {loading ? "جاري الإنشاء..." : "🏠 أنشئ غرفة"}
+      </Btn>
+
+      {/* Solo Play */}
+      <Btn color={C.orange} onClick={onSoloPlay} disabled={loading} style={{ marginBottom: 12 }}>
+        🎯 العب لحالك
       </Btn>
 
       {/* Join Room */}

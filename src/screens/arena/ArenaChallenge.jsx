@@ -20,6 +20,9 @@ export default function ArenaChallenge({ token, roomCode, data, reactionGo, reac
     if (!submitted && !spectator) {
       if (data.type === "speed_tap") submit({ tapCount: tapCountRef.current });
       else if (data.type === "reaction") submit({ early: false, reactionTime: 10000 });
+      else if (data.type === "truefalse") submit({ answers: tfAnswersRef.current });
+      else if (data.type === "word") submit({ selectedLetters: wordSelectedRef.current });
+      else if (data.type === "number_sort") submit({ order: sortSelectedRef.current });
       else submit({});
     }
   };
@@ -33,19 +36,32 @@ export default function ArenaChallenge({ token, roomCode, data, reactionGo, reac
   const [memHighlight, setMemHighlight] = useState(-1);
   const [memInput, setMemInput] = useState([]);
 
-  // Math
-  const [mathInput, setMathInput] = useState("");
-
   // Reaction
   const [reactionPhase, setReactionPhase] = useState("wait");
   const [reactionTime, setReactionTime] = useState(0);
   const reactionStartRef = useRef(0);
 
-  // Word
-  const [wordInput, setWordInput] = useState("");
+  // Word (button-based)
+  const [wordSelected, setWordSelected] = useState([]);
+  const [wordAvailable, setWordAvailable] = useState([]);
+  const wordSelectedRef = useRef([]);
 
   // Color
   const [colorPicked, setColorPicked] = useState(null);
+
+  // True/False
+  const [tfIndex, setTfIndex] = useState(0);
+  const [tfAnswers, setTfAnswers] = useState([]);
+  const tfAnswersRef = useRef([]);
+  const [tfFeedback, setTfFeedback] = useState(null);
+
+  // Emoji Spot
+  const [emojiPicked, setEmojiPicked] = useState(null);
+
+  // Number Sort
+  const [sortSelected, setSortSelected] = useState([]);
+  const [sortAvailable, setSortAvailable] = useState([]);
+  const sortSelectedRef = useRef([]);
 
   // Reset on new challenge
   useEffect(() => {
@@ -55,11 +71,18 @@ export default function ArenaChallenge({ token, roomCode, data, reactionGo, reac
     setMemPhase("show");
     setMemHighlight(-1);
     setMemInput([]);
-    setMathInput("");
     setReactionPhase("wait");
     setReactionTime(0);
-    setWordInput("");
+    setWordSelected([]);
+    wordSelectedRef.current = [];
     setColorPicked(null);
+    setTfIndex(0);
+    setTfAnswers([]);
+    tfAnswersRef.current = [];
+    setTfFeedback(null);
+    setEmojiPicked(null);
+    setSortSelected([]);
+    sortSelectedRef.current = [];
 
     // Memory: show sequence
     if (data.type === "memory" && data.sequence) {
@@ -69,6 +92,16 @@ export default function ArenaChallenge({ token, roomCode, data, reactionGo, reac
         setTimeout(() => setMemHighlight(-1), (i + 1) * 700 + 400);
       });
       setTimeout(() => setMemPhase("input"), (seq.length + 1) * 700);
+    }
+
+    // Word: init available letters
+    if (data.type === "word" && data.scrambledLetters) {
+      setWordAvailable(data.scrambledLetters.map((l, i) => ({ letter: l, id: i })));
+    }
+
+    // Number Sort: init available numbers
+    if (data.type === "number_sort" && data.numbers) {
+      setSortAvailable([...data.numbers]);
     }
   }, [data]);
 
@@ -83,9 +116,8 @@ export default function ArenaChallenge({ token, roomCode, data, reactionGo, reac
   // Speed Tap
   const handleTap = () => {
     if (submitted) return;
-    const newCount = tapCount + 1;
-    setTapCount(newCount);
-    tapCountRef.current = newCount;
+    tapCountRef.current++;
+    setTapCount(tapCountRef.current);
   };
 
   // Memory Tap
@@ -96,12 +128,6 @@ export default function ArenaChallenge({ token, roomCode, data, reactionGo, reac
     if (next.length === data.sequence.length) {
       submit({ sequence: next });
     }
-  };
-
-  // Math submit
-  const checkMath = () => {
-    if (!mathInput.trim() || submitted) return;
-    submit({ answer: mathInput.trim() });
   };
 
   // Reaction click
@@ -118,10 +144,27 @@ export default function ArenaChallenge({ token, roomCode, data, reactionGo, reac
     }
   };
 
-  // Word submit
-  const checkWord = () => {
-    if (!wordInput.trim() || submitted) return;
-    submit({ word: wordInput.trim() });
+  // Word: select letter (item = { letter, id })
+  const wordSelectLetter = (item) => {
+    if (submitted) return;
+    const newSelected = [...wordSelected, item];
+    const newAvailable = wordAvailable.filter((a) => a.id !== item.id);
+    setWordSelected(newSelected);
+    setWordAvailable(newAvailable);
+    wordSelectedRef.current = newSelected.map((i) => i.letter);
+    if (newSelected.length === data.letterCount) {
+      submit({ selectedLetters: newSelected.map((i) => i.letter) });
+    }
+  };
+
+  // Word: undo last letter
+  const wordUndo = () => {
+    if (submitted || wordSelected.length === 0) return;
+    const lastItem = wordSelected[wordSelected.length - 1];
+    const newSelected = wordSelected.slice(0, -1);
+    setWordSelected(newSelected);
+    setWordAvailable([...wordAvailable, lastItem]);
+    wordSelectedRef.current = newSelected.map((i) => i.letter);
   };
 
   // Color pick
@@ -129,6 +172,52 @@ export default function ArenaChallenge({ token, roomCode, data, reactionGo, reac
     if (submitted || colorPicked) return;
     setColorPicked(hex);
     submit({ colorHex: hex });
+  };
+
+  // True/False: answer
+  const tfAnswer = (answer) => {
+    if (submitted) return;
+    const newAnswers = [...tfAnswers, answer];
+    setTfAnswers(newAnswers);
+    tfAnswersRef.current = newAnswers;
+    setTfFeedback(answer);
+    setTimeout(() => {
+      setTfFeedback(null);
+      if (newAnswers.length >= data.statements.length) {
+        submit({ answers: newAnswers });
+      } else {
+        setTfIndex(tfIndex + 1);
+      }
+    }, 300);
+  };
+
+  // Emoji Spot: pick
+  const emojiPick = (idx) => {
+    if (submitted || emojiPicked !== null) return;
+    setEmojiPicked(idx);
+    submit({ position: idx });
+  };
+
+  // Number Sort: select number
+  const sortSelectNum = (num) => {
+    if (submitted) return;
+    const newSelected = [...sortSelected, num];
+    const newAvailable = sortAvailable.filter((n) => n !== num);
+    setSortSelected(newSelected);
+    setSortAvailable(newAvailable);
+    sortSelectedRef.current = newSelected;
+    if (newSelected.length === data.numbers.length) {
+      submit({ order: newSelected });
+    }
+  };
+
+  // Number Sort: undo
+  const sortUndo = () => {
+    if (submitted || sortSelected.length === 0) return;
+    const last = sortSelected[sortSelected.length - 1];
+    setSortSelected(sortSelected.slice(0, -1));
+    setSortAvailable([...sortAvailable, last]);
+    sortSelectedRef.current = sortSelected.slice(0, -1);
   };
 
   const spectatorBanner = spectator ? (
@@ -139,6 +228,10 @@ export default function ArenaChallenge({ token, roomCode, data, reactionGo, reac
       <span style={{ fontSize: 13, fontWeight: 700, color: C.purple }}>👻 وضع المتفرج</span>
       {data.spectatorCount > 0 && <span style={{ fontSize: 11, color: C.muted, marginRight: 8 }}> — {data.spectatorCount} متفرج</span>}
     </div>
+  ) : null;
+
+  const waitingMsg = submitted ? (
+    <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: C.muted, animation: "pulse 1.5s infinite" }}>⏳ بانتظار بقية اللاعبين...</div>
   ) : null;
 
   // SPEED TAP
@@ -166,7 +259,7 @@ export default function ArenaChallenge({ token, roomCode, data, reactionGo, reac
             </Card>
           )}
         </div>
-        {submitted && <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: C.muted, animation: "pulse 1.5s infinite" }}>⏳ بانتظار بقية اللاعبين...</div>}
+        {waitingMsg}
       </div>
     );
   }
@@ -195,31 +288,47 @@ export default function ArenaChallenge({ token, roomCode, data, reactionGo, reac
             }}>{em}</button>
           ))}
         </div>
-        {submitted && <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: C.muted, animation: "pulse 1.5s infinite" }}>⏳ بانتظار بقية اللاعبين...</div>}
+        {waitingMsg}
       </div>
     );
   }
 
-  // MATH
-  if (data.type === "math") {
+  // TRUE/FALSE
+  if (data.type === "truefalse") {
+    const stmt = data.statements?.[tfIndex];
     return (
       <div style={{ animation: "fadeIn 0.3s ease" }}>
         {spectatorBanner}
-        <Badge color={C.cyan}>🔢 رياضيات سريعة</Badge>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+          <Badge color={C.green}>✅ صح ولا غلط</Badge>
+          <Badge>{tfAnswers.length}/{data.statements?.length || 5}</Badge>
+        </div>
         <Timer timerEnd={data.timerEnd} maxSeconds={data.time} onDone={onTimerDone} />
-        <Card glow color={C.cyan} style={{ textAlign: "center", margin: "16px 0" }}>
-          <div style={{ fontSize: 36, fontWeight: 900, fontFamily: "'Courier New',monospace", direction: "ltr" }}>{data.question}</div>
-        </Card>
-        {!submitted ? (
-          <div style={{ display: "flex", gap: 8 }}>
-            <input type="number" value={mathInput} onChange={(e) => setMathInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && checkMath()}
-              style={{ flex: 1, padding: 14, background: "rgba(255,255,255,0.05)", border: `1px solid ${C.border}`, borderRadius: 10, color: "#fff", fontSize: 22, fontFamily: "'Courier New',monospace", textAlign: "center", outline: "none", direction: "ltr" }}
-              placeholder="?" autoFocus />
-            <Btn color={C.cyan} onClick={checkMath} full={false} disabled={!mathInput.trim()} style={{ padding: "14px 24px" }}>✅</Btn>
-          </div>
+        {!submitted && stmt ? (
+          <>
+            <Card glow color={C.green} style={{ textAlign: "center", margin: "16px 0", minHeight: 80, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ fontSize: 20, fontWeight: 800, lineHeight: 1.6, direction: "rtl" }}>{stmt.text}</div>
+            </Card>
+            <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+              <button onClick={() => tfAnswer(true)} style={{
+                flex: 1, maxWidth: 150, padding: "16px 0", borderRadius: 14, border: "none",
+                background: tfFeedback === true ? `${C.green}30` : "rgba(255,255,255,0.05)",
+                fontSize: 22, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", color: C.green,
+              }}>صح ✅</button>
+              <button onClick={() => tfAnswer(false)} style={{
+                flex: 1, maxWidth: 150, padding: "16px 0", borderRadius: 14, border: "none",
+                background: tfFeedback === false ? `${C.red}30` : "rgba(255,255,255,0.05)",
+                fontSize: 22, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", color: C.red,
+              }}>غلط ❌</button>
+            </div>
+          </>
         ) : (
-          <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: C.muted, animation: "pulse 1.5s infinite" }}>⏳ بانتظار بقية اللاعبين...</div>
+          <Card glow color={C.green} style={{ textAlign: "center", margin: "16px 0" }}>
+            <div style={{ fontSize: 36 }}>✅</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: C.muted }}>تم الإرسال!</div>
+          </Card>
         )}
+        {waitingMsg}
       </div>
     );
   }
@@ -256,32 +365,60 @@ export default function ArenaChallenge({ token, roomCode, data, reactionGo, reac
             )}
           </Card>
         )}
-        {submitted && <div style={{ textAlign: "center", fontSize: 13, color: C.muted, animation: "pulse 1.5s infinite" }}>⏳ بانتظار بقية اللاعبين...</div>}
+        {waitingMsg}
       </div>
     );
   }
 
-  // WORD
+  // WORD (button-based)
   if (data.type === "word") {
     return (
       <div style={{ animation: "fadeIn 0.3s ease" }}>
         {spectatorBanner}
         <Badge color={C.orange}>🔤 رتّب الحروف</Badge>
         <Timer timerEnd={data.timerEnd} maxSeconds={data.time} onDone={onTimerDone} />
-        <Card glow color={C.orange} style={{ textAlign: "center", margin: "16px 0" }}>
-          <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>الفئة: {data.category}</div>
-          <div style={{ fontSize: 36, fontWeight: 900, letterSpacing: 8, fontFamily: "'Courier New',monospace", direction: "rtl", color: C.orange }}>{data.scrambled}</div>
-        </Card>
+        <div style={{ fontSize: 11, color: C.muted, textAlign: "center", margin: "8px 0 4px" }}>الفئة: {data.category}</div>
         {!submitted ? (
-          <div style={{ display: "flex", gap: 8 }}>
-            <input value={wordInput} onChange={(e) => setWordInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && checkWord()}
-              style={{ flex: 1, padding: 14, background: "rgba(255,255,255,0.05)", border: `1px solid ${C.border}`, borderRadius: 10, color: "#fff", fontSize: 20, fontFamily: "inherit", textAlign: "center", outline: "none", direction: "rtl" }}
-              placeholder="اكتب الكلمة..." autoFocus />
-            <Btn color={C.orange} onClick={checkWord} full={false} disabled={!wordInput.trim()} style={{ padding: "14px 24px" }}>✅</Btn>
-          </div>
+          <>
+            {/* Selected letters display */}
+            <Card glow color={C.orange} style={{ textAlign: "center", margin: "8px 0 12px", minHeight: 56, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+              {wordSelected.length > 0 ? (
+                <div style={{ fontSize: 32, fontWeight: 900, letterSpacing: 6, direction: "rtl", color: C.orange }}>
+                  {wordSelected.map((i) => i.letter).join("")}
+                </div>
+              ) : (
+                <div style={{ fontSize: 14, color: C.muted }}>اضغط على الحروف بالترتيب الصحيح</div>
+              )}
+            </Card>
+            {/* Available letter buttons */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginBottom: 12 }}>
+              {wordAvailable.map((item) => (
+                <button key={item.id} onClick={() => wordSelectLetter(item)} style={{
+                  width: 52, height: 52, borderRadius: 12, border: "none",
+                  background: `${C.orange}20`, fontSize: 24, fontWeight: 800,
+                  cursor: "pointer", fontFamily: "inherit", color: "#fff",
+                }}>
+                  {item.letter}
+                </button>
+              ))}
+            </div>
+            {/* Undo button */}
+            {wordSelected.length > 0 && (
+              <div style={{ textAlign: "center" }}>
+                <button onClick={wordUndo} style={{
+                  padding: "8px 20px", borderRadius: 10, border: `1px solid ${C.border}`,
+                  background: "rgba(255,255,255,0.05)", color: C.muted, fontSize: 13,
+                  cursor: "pointer", fontFamily: "inherit",
+                }}>تراجع ↩</button>
+              </div>
+            )}
+          </>
         ) : (
-          <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: C.muted, animation: "pulse 1.5s infinite" }}>⏳ بانتظار بقية اللاعبين...</div>
+          <Card glow color={C.orange} style={{ textAlign: "center", margin: "16px 0" }}>
+            <div style={{ fontSize: 28, fontWeight: 900, color: C.orange }}>{wordSelected.map((i) => i.letter).join("")}</div>
+          </Card>
         )}
+        {waitingMsg}
       </div>
     );
   }
@@ -310,7 +447,92 @@ export default function ArenaChallenge({ token, roomCode, data, reactionGo, reac
             </button>
           ))}
         </div>
-        {submitted && <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: C.muted, animation: "pulse 1.5s infinite" }}>⏳ بانتظار بقية اللاعبين...</div>}
+        {waitingMsg}
+      </div>
+    );
+  }
+
+  // EMOJI SPOT
+  if (data.type === "emoji_spot") {
+    return (
+      <div style={{ animation: "fadeIn 0.3s ease" }}>
+        {spectatorBanner}
+        <Badge color={C.cyan}>👀 اكتشف المختلف</Badge>
+        <Timer timerEnd={data.timerEnd} maxSeconds={data.time} onDone={onTimerDone} />
+        <div style={{ textAlign: "center", margin: "8px 0", fontSize: 13, color: C.muted }}>اضغط على الإيموجي المختلف!</div>
+        {!submitted ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, maxWidth: 300, margin: "0 auto" }}>
+            {data.grid?.map((emoji, i) => (
+              <button key={i} onClick={() => emojiPick(i)} style={{
+                aspectRatio: "1", borderRadius: 12, border: "none",
+                background: emojiPicked === i ? `${C.cyan}30` : "rgba(255,255,255,0.05)",
+                fontSize: 32, cursor: "pointer", fontFamily: "inherit",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>{emoji}</button>
+            ))}
+          </div>
+        ) : (
+          <Card glow color={C.cyan} style={{ textAlign: "center", margin: "16px 0" }}>
+            <div style={{ fontSize: 48 }}>{data.grid?.[emojiPicked]}</div>
+            <div style={{ fontSize: 14, color: C.muted }}>تم الاختيار!</div>
+          </Card>
+        )}
+        {waitingMsg}
+      </div>
+    );
+  }
+
+  // NUMBER SORT
+  if (data.type === "number_sort") {
+    return (
+      <div style={{ animation: "fadeIn 0.3s ease" }}>
+        {spectatorBanner}
+        <Badge color={C.purple}>🔢 رتّب الأرقام</Badge>
+        <Timer timerEnd={data.timerEnd} maxSeconds={data.time} onDone={onTimerDone} />
+        <div style={{ textAlign: "center", margin: "8px 0", fontSize: 13, color: C.muted }}>رتّب من الأصغر للأكبر</div>
+        {!submitted ? (
+          <>
+            {/* Selected numbers display */}
+            <Card glow color={C.purple} style={{ textAlign: "center", margin: "8px 0 12px", minHeight: 50, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              {sortSelected.length > 0 ? (
+                sortSelected.map((n, i) => (
+                  <span key={i} style={{ fontSize: 24, fontWeight: 900, color: C.purple, fontFamily: "'Courier New',monospace" }}>
+                    {n}{i < sortSelected.length - 1 ? " ←" : ""}
+                  </span>
+                ))
+              ) : (
+                <div style={{ fontSize: 14, color: C.muted }}>اضغط على الأرقام بالترتيب</div>
+              )}
+            </Card>
+            {/* Available number buttons */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", marginBottom: 12 }}>
+              {sortAvailable.map((num) => (
+                <button key={num} onClick={() => sortSelectNum(num)} style={{
+                  width: 60, height: 60, borderRadius: 14, border: "none",
+                  background: `${C.purple}20`, fontSize: 22, fontWeight: 900,
+                  cursor: "pointer", fontFamily: "'Courier New',monospace", color: "#fff",
+                }}>{num}</button>
+              ))}
+            </div>
+            {/* Undo button */}
+            {sortSelected.length > 0 && (
+              <div style={{ textAlign: "center" }}>
+                <button onClick={sortUndo} style={{
+                  padding: "8px 20px", borderRadius: 10, border: `1px solid ${C.border}`,
+                  background: "rgba(255,255,255,0.05)", color: C.muted, fontSize: 13,
+                  cursor: "pointer", fontFamily: "inherit",
+                }}>تراجع ↩</button>
+              </div>
+            )}
+          </>
+        ) : (
+          <Card glow color={C.purple} style={{ textAlign: "center", margin: "16px 0" }}>
+            <div style={{ fontSize: 24, fontWeight: 900, color: C.purple, fontFamily: "'Courier New',monospace" }}>
+              {sortSelected.join(" → ")}
+            </div>
+          </Card>
+        )}
+        {waitingMsg}
       </div>
     );
   }

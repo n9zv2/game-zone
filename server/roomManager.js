@@ -130,7 +130,7 @@ export function startGame(code, hostToken, gameType) {
   if (!room) return { error: "الغرفة غير موجودة" };
   if (room.hostToken !== hostToken) return { error: "أنت لست الهوست" };
   if (room.status !== "lobby") return { error: "اللعبة بدأت بالفعل" };
-  if (room.players.filter((p) => p.connected).length < 2)
+  if (!room.solo && room.players.filter((p) => p.connected).length < 2)
     return { error: "يجب أن يكون هناك لاعبين على الأقل" };
 
   room.status = "playing";

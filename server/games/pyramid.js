@@ -24,7 +24,8 @@ export function startPyramid(io, room) {
       extraTime: 0,
     }));
 
-  const totalRounds = calcTotalRounds(players.length);
+  const solo = players.length === 1;
+  const totalRounds = solo ? 20 : calcTotalRounds(players.length);
 
   // Build question pool ordered by difficulty progression
   const questions = [];
@@ -59,6 +60,12 @@ export function startPyramid(io, room) {
     timerEnd: 0,
     currentQuestion: null,
     hiddenOptions: new Map(),
+    finals: false,
+    finalsWins: {},
+    finalsRound: 0,
+    pools,
+    poolIdx,
+    solo,
   };
 
   activeGames.set(room.code, game);
@@ -90,9 +97,22 @@ function sendRound(io, roomCode) {
   if (!game) return;
 
   const alivePlayers = game.players.filter((p) => p.alive);
-  if (alivePlayers.length <= 1 || game.roundIdx >= game.totalRounds) {
+  if (!game.solo && alivePlayers.length <= 1) {
     endGame(io, roomCode);
     return;
+  }
+  if (!game.solo && !game.finals && game.roundIdx >= game.totalRounds) {
+    endGame(io, roomCode);
+    return;
+  }
+
+  // During finals or solo, generate new questions dynamically if we've run out
+  if (game.roundIdx >= game.questions.length) {
+    const diff = game.solo ? getDifficulty(game.roundIdx, game.totalRounds) : "hard";
+    const q = game.pools[diff][game.poolIdx[diff] % game.pools[diff].length];
+    game.poolIdx[diff]++;
+    game.questions.push({ roundIdx: game.roundIdx, difficulty: diff, question: q });
+    game.totalRounds = game.roundIdx + 1;
   }
 
   const roundData = game.questions[game.roundIdx];
@@ -161,7 +181,7 @@ function sendRound(io, roomCode) {
   // Global timeout
   game._questionTimeout = setTimeout(() => {
     revealAndEliminate(io, roomCode);
-  }, (baseTime + 10) * 1000);
+  }, (baseTime + 2) * 1000);
 }
 
 function revealAndEliminate(io, roomCode) {
@@ -207,6 +227,36 @@ function revealAndEliminate(io, roomCode) {
     });
   });
 
+  // --- Solo mode: correct → next round, wrong → end game ---
+  if (game.solo) {
+    const player = game.players[0];
+    const playerResult = results[0];
+    const roomId = `room:${roomCode}`;
+
+    const nextRoundIdx = game.roundIdx + 1;
+    const nextDifficulty = getDifficulty(nextRoundIdx, game.totalRounds);
+
+    io.to(roomId).emit("pyramid:round-result", {
+      correctIdx: q.a,
+      results,
+      eliminated: [],
+      remaining: [{ token: player.token, name: player.name, avatar: player.avatar, score: player.score }],
+      roundIdx: game.roundIdx,
+      nextDifficulty,
+      alivePlayers: [{ token: player.token, name: player.name, avatar: player.avatar, score: player.score }],
+      totalPlayers: 1,
+    });
+
+    game.roundIdx++;
+
+    if (!playerResult.correct) {
+      setTimeout(() => endGame(io, roomCode), 4000);
+    } else {
+      setTimeout(() => sendRound(io, roomCode), 4000);
+    }
+    return;
+  }
+
   // Elimination logic
   const alivePlayers = game.players.filter((p) => p.alive);
   const wrongPlayers = alivePlayers.filter((p) => {
@@ -247,6 +297,90 @@ function revealAndEliminate(io, roomCode) {
   game.hiddenOptions = new Map();
 
   const roomId = `room:${roomCode}`;
+
+  // Scoreboard data for spectators
+  const aliveScoreboard = remaining
+    .map((p) => ({ token: p.token, name: p.name, avatar: p.avatar, score: p.score }))
+    .sort((a, b) => b.score - a.score);
+  const totalPlayers = game.players.length;
+
+  // --- Finals mode: when exactly 2 players remain ---
+  if (remaining.length === 2 && !game.finals) {
+    game.finals = true;
+    game.finalsRound = 0;
+    game.finalsWins = {};
+    remaining.forEach((p) => { game.finalsWins[p.token] = 0; });
+
+    io.to(roomId).emit("pyramid:round-result", {
+      correctIdx: q.a,
+      results,
+      eliminated: toEliminate.map((p) => ({
+        token: p.token, name: p.name, avatar: p.avatar, score: p.score,
+      })),
+      remaining: remaining.map((p) => ({
+        token: p.token, name: p.name, avatar: p.avatar, score: p.score,
+      })),
+      roundIdx: game.roundIdx,
+      nextDifficulty: "hard",
+      alivePlayers: aliveScoreboard,
+      totalPlayers,
+    });
+
+    io.to(roomId).emit("pyramid:finals-start", {
+      players: remaining.map((p) => ({
+        token: p.token, name: p.name, avatar: p.avatar, score: p.score,
+      })),
+      finalsWins: { ...game.finalsWins },
+    });
+
+    game.roundIdx++;
+    setTimeout(() => sendRound(io, roomCode), 4000);
+    return;
+  }
+
+  // --- During finals: Best of 3 scoring ---
+  if (game.finals && remaining.length === 2) {
+    game.finalsRound++;
+    // Determine round winner by points earned this round
+    const roundScores = remaining.map((p) => {
+      const r = results.find((r) => r.token === p.token);
+      return { token: p.token, points: r ? r.points : 0 };
+    }).sort((a, b) => b.points - a.points);
+    const roundWinner = roundScores[0];
+    if (roundWinner.points > 0) {
+      game.finalsWins[roundWinner.token]++;
+    }
+
+    io.to(roomId).emit("pyramid:round-result", {
+      correctIdx: q.a,
+      results,
+      eliminated: [],
+      remaining: remaining.map((p) => ({
+        token: p.token, name: p.name, avatar: p.avatar, score: p.score,
+      })),
+      roundIdx: game.roundIdx,
+      nextDifficulty: "hard",
+      finals: true,
+      finalsWins: { ...game.finalsWins },
+      finalsRound: game.finalsRound,
+      roundWinner: roundWinner.token,
+      alivePlayers: aliveScoreboard,
+      totalPlayers,
+    });
+
+    game.roundIdx++;
+
+    // Check if someone reached 2 wins
+    const winner = Object.entries(game.finalsWins).find(([, w]) => w >= 2);
+    if (winner) {
+      setTimeout(() => endGame(io, roomCode), 4000);
+    } else {
+      setTimeout(() => sendRound(io, roomCode), 4000);
+    }
+    return;
+  }
+
+  // --- Normal flow (3+ players) ---
   io.to(roomId).emit("pyramid:round-result", {
     correctIdx: q.a,
     results,
@@ -264,12 +398,14 @@ function revealAndEliminate(io, roomCode) {
     })),
     roundIdx: game.roundIdx,
     nextDifficulty,
+    alivePlayers: aliveScoreboard,
+    totalPlayers,
   });
 
   game.roundIdx++;
 
   setTimeout(() => {
-    if (remaining.length <= 1 || game.roundIdx >= game.totalRounds) {
+    if (remaining.length <= 1 || (!game.finals && game.roundIdx >= game.totalRounds)) {
       endGame(io, roomCode);
     } else {
       sendRound(io, roomCode);
@@ -299,7 +435,7 @@ function endGame(io, roomCode) {
   });
 
   const roomId = `room:${roomCode}`;
-  io.to(roomId).emit("pyramid:champion", {
+  const championData = {
     champion: {
       token: champion.token,
       name: champion.name,
@@ -314,7 +450,15 @@ function endGame(io, roomCode) {
       score: p.score,
       alive: p.alive,
     })),
-  });
+  };
+
+  if (game.solo) {
+    championData.solo = true;
+    championData.maxRound = game.roundIdx;
+    championData.difficulty = getDifficulty(Math.max(0, game.roundIdx - 1), game.totalRounds);
+  }
+
+  io.to(roomId).emit("pyramid:champion", championData);
 
   finishGame(roomCode);
   activeGames.delete(roomCode);
@@ -331,6 +475,18 @@ export function handlePyramidAnswer(io, socket, data) {
   player.answered = true;
   player.answerIdx = answerIdx;
   player.answerTime = Math.max(0, game.timerEnd - Date.now());
+
+  // Notify spectators that someone answered
+  const answeredCount = game.players.filter((p) => p.alive && p.answered).length;
+  const totalAlive = game.players.filter((p) => p.alive).length;
+  const deadPlayers = game.players.filter((p) => !p.alive && p.socketId);
+  deadPlayers.forEach((dp) => {
+    io.to(dp.socketId).emit("pyramid:player-answered", {
+      token: player.token,
+      answeredCount,
+      totalAlive,
+    });
+  });
 
   const allAnswered = game.players
     .filter((p) => p.alive)
@@ -365,6 +521,18 @@ export function handleLifeline(io, socket, data) {
       player.answerIdx = -2; // Skip marker — treated as "correct" for elimination purposes
       // Give them a fake high answerTime so they aren't eliminated as "slowest"
       player.answerTime = 999999;
+
+      // Notify spectators that someone answered (skip counts as answer)
+      const skipAnsweredCount = game.players.filter((p) => p.alive && p.answered).length;
+      const skipTotalAlive = game.players.filter((p) => p.alive).length;
+      const skipDeadPlayers = game.players.filter((p) => !p.alive && p.socketId);
+      skipDeadPlayers.forEach((dp) => {
+        io.to(dp.socketId).emit("pyramid:player-answered", {
+          token: player.token,
+          answeredCount: skipAnsweredCount,
+          totalAlive: skipTotalAlive,
+        });
+      });
 
       io.to(player.socketId).emit("pyramid:lifeline-used", {
         type: "skip",

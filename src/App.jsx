@@ -25,6 +25,7 @@ export default function GameZone() {
   const [connectionError, setConnectionError] = useState(false);
   const [xpData, setXpData] = useState(null);
   const [levelUpLevel, setLevelUpLevel] = useState(null);
+  const [soloMode, setSoloMode] = useState(false);
 
   // Initialize: connect socket, check session
   useEffect(() => {
@@ -118,6 +119,19 @@ export default function GameZone() {
     setScreen("lobby");
   }, []);
 
+  const handleSoloPlay = useCallback(() => {
+    socket.emit("room:solo-start", { token }, (res) => {
+      if (res?.error) return;
+      if (res?.code) {
+        setRoomCode(res.code);
+        setGameType("pyramid");
+        setSoloMode(true);
+        session.setRoomCode(res.code);
+        setScreen("pyramid");
+      }
+    });
+  }, [token]);
+
   const handleLeaveRoom = useCallback(() => {
     setRoomCode(null);
     setPlayers([]);
@@ -140,6 +154,14 @@ export default function GameZone() {
   const handlePlayAgain = useCallback(() => {
     setRankings(null);
     setGameType(null);
+    // Solo mode — go straight back to landing
+    if (soloMode) {
+      setSoloMode(false);
+      session.setRoomCode(null);
+      setRoomCode(null);
+      setScreen("landing");
+      return;
+    }
     // Go back to lobby if still in room
     if (roomCode) {
       socket.emit("room:rejoin", { token, code: roomCode }, (res) => {
@@ -156,7 +178,7 @@ export default function GameZone() {
     } else {
       setScreen("landing");
     }
-  }, [roomCode, token]);
+  }, [roomCode, token, soloMode]);
 
   const renderScreen = () => {
     switch (screen) {
@@ -170,7 +192,7 @@ export default function GameZone() {
       case "identity":
         return <IdentitySetup onDone={handleIdentityDone} />;
       case "landing":
-        return <Landing token={token} name={name} avatar={avatar} onRoom={handleRoom} onMatchHistory={() => setScreen("match-history")} />;
+        return <Landing token={token} name={name} avatar={avatar} onRoom={handleRoom} onSoloPlay={handleSoloPlay} onMatchHistory={() => setScreen("match-history")} />;
       case "match-history":
         return <MatchHistory onBack={() => setScreen("landing")} />;
       case "lobby":
