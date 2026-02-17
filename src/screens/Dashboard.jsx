@@ -40,7 +40,7 @@ export default function Dashboard({ token, rankings, gameType, onPlayAgain, xpDa
       <Confetti show={isChamp} />
 
       <div style={{ textAlign: "center", marginBottom: 20 }}>
-        <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>نتائج {gameType === "pyramid" ? "🔺 الهرم" : gameType === "arena" ? "⚔️ الحلبة" : gameType === "fitna" ? "🎭 فتنة" : gameType === "salfa" ? "🕵️ مين برا السالفة" : "🎮 اللعبة"}</div>
+        <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>نتائج {gameType === "pyramid" ? "🔺 الهرم" : gameType === "arena" ? "⚔️ الحلبة" : gameType === "fitna" ? "🎭 فتنة" : gameType === "salfa" ? "🕵️ مين برا السالفة" : gameType === "mutakhafy" ? "🥸 المتخفي" : "🎮 اللعبة"}</div>
         <h1 style={{ fontSize: 28, fontWeight: 900, margin: 0, background: `linear-gradient(135deg, ${C.green}, ${C.gold})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>لوحة النتائج</h1>
       </div>
 

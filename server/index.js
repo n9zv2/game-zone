@@ -35,6 +35,10 @@ import {
   startSalfa, handleHint, handleVoteRequest, handleVote as handleSalfaVote,
   handleSpyGuess,
 } from "./games/salfa.js";
+import {
+  startMutakhafy, handleMutakhafySubmit, handleMutakhafyGuess,
+  handleMutakhafyFinalGuesses,
+} from "./games/mutakhafy.js";
 
 const app = express();
 const server = createServer(app);
@@ -181,6 +185,8 @@ io.on("connection", (socket) => {
         startFitna(io, room, settings || {});
       } else if (gameType === "salfa") {
         startSalfa(io, room, settings || {});
+      } else if (gameType === "mutakhafy") {
+        startMutakhafy(io, room, settings || {});
       }
     }, 500);
 
@@ -249,6 +255,19 @@ io.on("connection", (socket) => {
 
   socket.on("salfa:spy-guess", (data) => {
     handleSpyGuess(io, socket, data);
+  });
+
+  // Mutakhafy events
+  socket.on("mutakhafy:submit", (data) => {
+    handleMutakhafySubmit(io, socket, data);
+  });
+
+  socket.on("mutakhafy:guess", (data) => {
+    handleMutakhafyGuess(io, socket, data);
+  });
+
+  socket.on("mutakhafy:final-guesses", (data) => {
+    handleMutakhafyFinalGuesses(io, socket, data);
   });
 
   // Reactions

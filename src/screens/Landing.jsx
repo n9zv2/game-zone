@@ -10,6 +10,7 @@ const HUB_GAMES = [
   { id: "arena", icon: "⚔️", name: "الحلبة", desc: "6 أنواع تحديات مختلفة — الأضعف يطلع!", players: "2-20", color: C.orange },
   { id: "fitna", icon: "🎭", name: "فتنة", desc: "خداع اجتماعي — اكشف المخربين!", players: "4-20", color: C.purple },
   { id: "salfa", icon: "🕵️", name: "مين برا السالفة", desc: "اكتشف الجاسوس — الكل يعرف الكلمة إلا هو!", players: "3-15", color: C.cyan },
+  { id: "mutakhafy", icon: "🥸", name: "المتخفي", desc: "الكل متخفي — اكشف الهويات وابقَ مجهول!", players: "4-20", color: C.pink },
 ];
 
 export default function Landing({ token, name, avatar, onRoom, onSoloPlay, onMatchHistory }) {
