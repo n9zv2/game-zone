@@ -195,6 +195,7 @@ export function handleHint(io, socket, data) {
 
   const roomId = `room:${roomCode}`;
   io.to(roomId).emit("salfa:hint-submitted", hintEntry);
+  socket.emit("salfa:hint-ack");
 
   // Check if all players have submitted
   if (game.hintsSubmitted.size >= game.players.length) {
@@ -384,6 +385,13 @@ function startSpyGuess(io, game, caughtSpyToken) {
   game.timerEnd = Date.now() + guessTime;
   const roomId = `room:${game.roomCode}`;
 
+  // Build 6 options: correct word + 5 random from same category
+  const sameCategory = SALFA_WORDS.filter(
+    (w) => w.category === game.category && w.word !== game.word
+  );
+  const decoys = pick(sameCategory, Math.min(5, sameCategory.length));
+  const options = shuffle([game.word, ...decoys.map((d) => d.word)]);
+
   // Tell everyone we're in spy guess phase
   game.players.forEach((player) => {
     if (!player.socketId) return;
@@ -394,6 +402,7 @@ function startSpyGuess(io, game, caughtSpyToken) {
       timerEnd: game.timerEnd,
       isSpy: isCaughtSpy,
       category: game.category,
+      options: isCaughtSpy ? options : [],
     });
   });
 

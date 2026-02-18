@@ -5,11 +5,12 @@ import Btn from "../../components/ui/Btn.jsx";
 import socket from "../../socket.js";
 
 export default function SalfaGuess({ data, token, roomCode }) {
-  const [guess, setGuess] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [selectedWord, setSelectedWord] = useState(null);
   const [timeLeft, setTimeLeft] = useState(15);
 
   const isSpy = data.isSpy;
+  const options = data.options || [];
 
   useEffect(() => {
     if (!data.timerEnd) return;
@@ -20,10 +21,11 @@ export default function SalfaGuess({ data, token, roomCode }) {
     return () => clearInterval(interval);
   }, [data.timerEnd]);
 
-  const submitGuess = () => {
-    if (!guess.trim() || submitted || !isSpy) return;
+  const submitGuess = (word) => {
+    if (submitted || !isSpy) return;
+    setSelectedWord(word);
     setSubmitted(true);
-    socket.emit("salfa:spy-guess", { roomCode, token, guess: guess.trim() });
+    socket.emit("salfa:spy-guess", { roomCode, token, guess: word });
   };
 
   return (
@@ -43,7 +45,7 @@ export default function SalfaGuess({ data, token, roomCode }) {
       </div>
 
       {isSpy ? (
-        // Spy's view — guess the word
+        // Spy's view — pick the word from options
         <Card style={{ width: "100%", padding: 16, border: `1px solid ${C.red}30`, background: `${C.red}08` }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: C.red, marginBottom: 4, textAlign: "center" }}>
             فرصتك الأخيرة!
@@ -52,30 +54,24 @@ export default function SalfaGuess({ data, token, roomCode }) {
             التصنيف: <span style={{ fontWeight: 800, color: C.gold }}>{data.category}</span>
           </div>
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, textAlign: "center" }}>
-            خمّن الكلمة الصحيحة عشان تفوز
+            اختر الكلمة الصحيحة عشان تفوز
           </div>
           {!submitted ? (
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                value={guess}
-                onChange={(e) => setGuess(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && submitGuess()}
-                placeholder="اكتب الكلمة..."
-                maxLength={30}
-                autoFocus
-                style={{
-                  flex: 1, padding: 12, background: "rgba(255,255,255,0.05)",
-                  border: `1px solid ${C.border}`, borderRadius: 10, color: "#fff",
-                  fontSize: 16, fontFamily: "inherit", outline: "none", direction: "rtl",
-                }}
-              />
-              <Btn color={C.red} full={false} onClick={submitGuess} disabled={!guess.trim()} style={{ padding: "12px 20px" }}>
-                خمّن
-              </Btn>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {options.map((word) => (
+                <Btn
+                  key={word}
+                  color={C.red}
+                  onClick={() => submitGuess(word)}
+                  style={{ fontSize: 15, padding: "12px 16px", fontWeight: 700 }}
+                >
+                  {word}
+                </Btn>
+              ))}
             </div>
           ) : (
             <div style={{ textAlign: "center", fontSize: 14, fontWeight: 700, color: C.gold }}>
-              ✅ تم الإرسال — بانتظار النتيجة...
+              ✅ اخترت "{selectedWord}" — بانتظار النتيجة...
             </div>
           )}
         </Card>

@@ -7,18 +7,33 @@ import socket from "../../socket.js";
 export default function SalfaHints({ data, token, roomCode, hints, voteRequestInfo }) {
   const [myHint, setMyHint] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
   const [voteRequested, setVoteRequested] = useState(false);
   const inputRef = useRef(null);
+  const ackTimerRef = useRef(null);
 
   // Check if already submitted this round
   useEffect(() => {
     const alreadySubmitted = hints.some((h) => h.token === token && h.round === data.roundNumber);
     setSubmitted(alreadySubmitted);
+    setVoteRequested(false);
     if (!alreadySubmitted) {
       setMyHint("");
+      setSubmitting(false);
     }
   }, [data.roundNumber, hints, token]);
+
+  // Listen for hint-ack from server
+  useEffect(() => {
+    const onAck = () => {
+      clearTimeout(ackTimerRef.current);
+      setSubmitting(false);
+      setSubmitted(true);
+    };
+    socket.on("salfa:hint-ack", onAck);
+    return () => socket.off("salfa:hint-ack", onAck);
+  }, []);
 
   // Timer countdown
   useEffect(() => {
@@ -32,9 +47,12 @@ export default function SalfaHints({ data, token, roomCode, hints, voteRequestIn
 
   const submitHint = () => {
     const trimmed = myHint.trim();
-    if (!trimmed || submitted) return;
+    if (!trimmed || submitted || submitting) return;
+    setSubmitting(true);
     socket.emit("salfa:hint", { roomCode, token, hint: trimmed });
-    setSubmitted(true);
+    // If no ack within 3s, allow retry
+    clearTimeout(ackTimerRef.current);
+    ackTimerRef.current = setTimeout(() => setSubmitting(false), 3000);
   };
 
   const requestVote = () => {
@@ -76,15 +94,16 @@ export default function SalfaHints({ data, token, roomCode, hints, voteRequestIn
               onKeyDown={(e) => e.key === "Enter" && submitHint()}
               placeholder="تلميح..."
               maxLength={30}
+              disabled={submitting}
               style={{
                 flex: 1, padding: 12, background: "rgba(255,255,255,0.05)",
                 border: `1px solid ${C.border}`, borderRadius: 10, color: "#fff",
                 fontSize: 16, fontFamily: "inherit", outline: "none",
-                direction: "rtl",
+                direction: "rtl", opacity: submitting ? 0.5 : 1,
               }}
             />
-            <Btn color={C.cyan} full={false} onClick={submitHint} disabled={!myHint.trim()} style={{ padding: "12px 20px" }}>
-              إرسال
+            <Btn color={C.cyan} full={false} onClick={submitHint} disabled={!myHint.trim() || submitting} style={{ padding: "12px 20px" }}>
+              {submitting ? "جاري..." : "إرسال"}
             </Btn>
           </div>
         </Card>
