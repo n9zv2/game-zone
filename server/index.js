@@ -49,11 +49,11 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      connectSrc: ["'self'", "wss:", "ws:"],
+      connectSrc: ["'self'", "wss:", "ws:", "https://cloud.umami.is"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:"],
       fontSrc: ["'self'", "data:"],
-      scriptSrc: ["'self'"],
+      scriptSrc: ["'self'", "https://cloud.umami.is"],
     },
   },
 }));
