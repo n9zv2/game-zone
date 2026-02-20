@@ -511,3 +511,13 @@ function endGame(io, roomCode) {
 export function getActiveGame(roomCode) {
   return activeGames.get(roomCode);
 }
+
+// Update player's socketId when they reconnect mid-game
+export function updateArenaSocket(roomCode, token, socketId) {
+  const game = activeGames.get(roomCode);
+  if (!game) return;
+  const player = game.players.find((p) => p.token === token);
+  if (player) {
+    player.socketId = socketId;
+  }
+}

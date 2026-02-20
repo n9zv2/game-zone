@@ -6,6 +6,9 @@ import { addScore } from "../sessionManager.js";
 // Active pyramid games: roomCode -> gameState
 const activeGames = new Map();
 
+// Max time a game can be stuck in question phase before auto-ending (90 seconds)
+const MAX_QUESTION_PHASE_MS = 90000;
+
 export function startPyramid(io, room) {
   const players = room.players
     .filter((p) => p.connected)
@@ -96,103 +99,145 @@ function sendRound(io, roomCode) {
   const game = activeGames.get(roomCode);
   if (!game) return;
 
-  const alivePlayers = game.players.filter((p) => p.alive);
-  if (!game.solo && alivePlayers.length <= 1) {
-    endGame(io, roomCode);
-    return;
-  }
-  if (!game.solo && !game.finals && game.roundIdx >= game.totalRounds) {
-    endGame(io, roomCode);
-    return;
-  }
-
-  // During finals or solo, generate new questions dynamically if we've run out
-  if (game.roundIdx >= game.questions.length) {
-    const diff = game.solo ? getDifficulty(game.roundIdx, game.totalRounds) : "hard";
-    const q = game.pools[diff][game.poolIdx[diff] % game.pools[diff].length];
-    game.poolIdx[diff]++;
-    game.questions.push({ roundIdx: game.roundIdx, difficulty: diff, question: q });
-    game.totalRounds = game.roundIdx + 1;
-  }
-
-  const roundData = game.questions[game.roundIdx];
-  const q = roundData.question;
-  const diff = roundData.difficulty;
-  const config = DIFFICULTY_CONFIG[diff];
-
-  game.phase = "question";
-  game.currentQuestion = q;
-  game.hiddenOptions = new Map();
-
-  // Reset answers
-  game.players.forEach((p) => {
-    if (p.alive) {
-      p.answered = false;
-      p.answerIdx = -1;
-      p.answerTime = 0;
+  try {
+    const alivePlayers = game.players.filter((p) => p.alive);
+    if (!game.solo && alivePlayers.length <= 1) {
+      endGame(io, roomCode);
+      return;
     }
-  });
+    if (!game.solo && !game.finals && game.roundIdx >= game.totalRounds) {
+      endGame(io, roomCode);
+      return;
+    }
 
-  const baseTime = config.time;
-  game.timerEnd = Date.now() + baseTime * 1000;
+    // During finals or solo, generate new questions dynamically if we've run out
+    if (game.roundIdx >= game.questions.length) {
+      const diff = game.solo ? getDifficulty(game.roundIdx, game.totalRounds) : "hard";
+      const pool = game.pools[diff];
+      if (!pool || pool.length === 0) {
+        console.error(`[pyramid] No questions in pool "${diff}" for room ${roomCode}, ending game`);
+        endGame(io, roomCode);
+        return;
+      }
+      const q = pool[game.poolIdx[diff] % pool.length];
+      game.poolIdx[diff]++;
+      game.questions.push({ roundIdx: game.roundIdx, difficulty: diff, question: q });
+      game.totalRounds = game.roundIdx + 1;
+    }
 
-  const spectatorCount = game.players.filter((p) => !p.alive && p.socketId).length;
+    const roundData = game.questions[game.roundIdx];
+    if (!roundData || !roundData.question) {
+      console.error(`[pyramid] Missing question at round ${game.roundIdx} for room ${roomCode}, ending game`);
+      endGame(io, roomCode);
+      return;
+    }
+    const q = roundData.question;
+    const diff = roundData.difficulty;
+    const config = DIFFICULTY_CONFIG[diff];
 
-  // Send to each player individually (for 50/50 hidden options)
-  game.players.forEach((p) => {
-    if (!p.alive || !p.socketId) return;
-    const hidden = game.hiddenOptions.get(p.token) || [];
-    const personalTimerEnd = Date.now() + (baseTime + p.extraTime) * 1000;
-    io.to(p.socketId).emit("pyramid:round", {
-      roundIdx: game.roundIdx,
-      totalRounds: game.totalRounds,
-      difficulty: diff,
-      question: q.q,
-      options: q.o,
-      hidden,
-      timerEnd: personalTimerEnd,
-      timerSeconds: baseTime + p.extraTime,
-      streak: p.streak,
-      score: p.score,
-      lifelines: p.lifelines,
-      spectatorCount,
+    game.phase = "question";
+    game.currentQuestion = q;
+    game.hiddenOptions = new Map();
+
+    // Reset answers
+    game.players.forEach((p) => {
+      if (p.alive) {
+        p.answered = false;
+        p.answerIdx = -1;
+        p.answerTime = 0;
+      }
     });
-    p.extraTime = 0;
-  });
 
-  // Send spectator view to dead players (question without answer-ability)
-  const deadPlayers = game.players.filter((p) => !p.alive && p.socketId);
-  if (deadPlayers.length > 0) {
-    const spectatorData = {
-      roundIdx: game.roundIdx,
-      totalRounds: game.totalRounds,
-      difficulty: diff,
-      question: q.q,
-      options: q.o,
-      timerEnd: game.timerEnd,
-      timerSeconds: baseTime,
-      spectator: true,
-    };
-    deadPlayers.forEach((p) => {
-      io.to(p.socketId).emit("pyramid:round", spectatorData);
+    const baseTime = config.time;
+    game.timerEnd = Date.now() + baseTime * 1000;
+
+    const spectatorCount = game.players.filter((p) => !p.alive && p.socketId).length;
+
+    // Send to each player individually (for 50/50 hidden options)
+    game.players.forEach((p) => {
+      if (!p.alive || !p.socketId) return;
+      const hidden = game.hiddenOptions.get(p.token) || [];
+      const personalTimerEnd = Date.now() + (baseTime + p.extraTime) * 1000;
+      io.to(p.socketId).emit("pyramid:round", {
+        roundIdx: game.roundIdx,
+        totalRounds: game.totalRounds,
+        difficulty: diff,
+        question: q.q,
+        options: q.o,
+        hidden,
+        timerEnd: personalTimerEnd,
+        timerSeconds: baseTime + p.extraTime,
+        streak: p.streak,
+        score: p.score,
+        lifelines: p.lifelines,
+        spectatorCount,
+      });
+      p.extraTime = 0;
     });
+
+    // Send spectator view to dead players (question without answer-ability)
+    const deadPlayers = game.players.filter((p) => !p.alive && p.socketId);
+    if (deadPlayers.length > 0) {
+      const spectatorData = {
+        roundIdx: game.roundIdx,
+        totalRounds: game.totalRounds,
+        difficulty: diff,
+        question: q.q,
+        options: q.o,
+        timerEnd: game.timerEnd,
+        timerSeconds: baseTime,
+        spectator: true,
+      };
+      deadPlayers.forEach((p) => {
+        io.to(p.socketId).emit("pyramid:round", spectatorData);
+      });
+    }
+
+    // Clear any previous timeout before setting new one
+    clearTimeout(game._questionTimeout);
+    clearTimeout(game._safetyTimeout);
+
+    // Global timeout for this round
+    game._questionTimeout = setTimeout(() => {
+      revealAndEliminate(io, roomCode);
+    }, (baseTime + 2) * 1000);
+
+    // Safety timeout — if game stuck in question phase too long, force end
+    game._safetyTimeout = setTimeout(() => {
+      const g = activeGames.get(roomCode);
+      if (g && g.phase === "question") {
+        console.error(`[pyramid] Safety timeout: game ${roomCode} stuck in question phase, forcing end`);
+        clearTimeout(g._questionTimeout);
+        endGame(io, roomCode);
+      }
+    }, MAX_QUESTION_PHASE_MS);
+  } catch (err) {
+    console.error(`[pyramid] Error in sendRound for room ${roomCode}:`, err);
+    try { endGame(io, roomCode); } catch {}
   }
-
-  // Global timeout
-  game._questionTimeout = setTimeout(() => {
-    revealAndEliminate(io, roomCode);
-  }, (baseTime + 2) * 1000);
 }
 
 function revealAndEliminate(io, roomCode) {
   const game = activeGames.get(roomCode);
-  if (!game || game.phase === "reveal") return;
+  if (!game || game.phase === "reveal" || game.phase === "champion") return;
 
   clearTimeout(game._questionTimeout);
+  clearTimeout(game._safetyTimeout);
   game.phase = "reveal";
 
+  try {
   const q = game.currentQuestion;
+  if (!q) {
+    console.error(`[pyramid] No currentQuestion in revealAndEliminate for room ${roomCode}, ending game`);
+    endGame(io, roomCode);
+    return;
+  }
   const roundData = game.questions[game.roundIdx];
+  if (!roundData) {
+    console.error(`[pyramid] No roundData at index ${game.roundIdx} for room ${roomCode}, ending game`);
+    endGame(io, roomCode);
+    return;
+  }
   const diff = roundData.difficulty;
   const config = DIFFICULTY_CONFIG[diff];
 
@@ -411,12 +456,19 @@ function revealAndEliminate(io, roomCode) {
       sendRound(io, roomCode);
     }
   }, 4000);
+  } catch (err) {
+    console.error(`[pyramid] Error in revealAndEliminate for room ${roomCode}:`, err);
+    try { endGame(io, roomCode); } catch {}
+  }
 }
 
 function endGame(io, roomCode) {
   const game = activeGames.get(roomCode);
   if (!game) return;
 
+  // Clean up all timers
+  clearTimeout(game._questionTimeout);
+  clearTimeout(game._safetyTimeout);
   game.phase = "champion";
 
   const ranked = [...game.players].sort((a, b) => b.score - a.score);
@@ -465,6 +517,7 @@ function endGame(io, roomCode) {
 }
 
 export function handlePyramidAnswer(io, socket, data) {
+  if (!data) return;
   const { roomCode, token, answerIdx } = data;
   const game = activeGames.get(roomCode);
   if (!game || game.phase !== "question") return;
@@ -472,8 +525,11 @@ export function handlePyramidAnswer(io, socket, data) {
   const player = game.players.find((p) => p.token === token && p.alive);
   if (!player || player.answered) return;
 
+  // Validate answerIdx is a valid option index (0-3)
+  const validIdx = typeof answerIdx === "number" && answerIdx >= 0 && answerIdx <= 3 ? answerIdx : -1;
+
   player.answered = true;
-  player.answerIdx = answerIdx;
+  player.answerIdx = validIdx;
   player.answerTime = Math.max(0, game.timerEnd - Date.now());
 
   // Notify spectators that someone answered
@@ -493,6 +549,7 @@ export function handlePyramidAnswer(io, socket, data) {
     .every((p) => p.answered);
 
   if (allAnswered) {
+    clearTimeout(game._questionTimeout);
     revealAndEliminate(io, game.roomCode);
   }
 }
@@ -541,7 +598,10 @@ export function handleLifeline(io, socket, data) {
       });
 
       const allAnswered = game.players.filter((p) => p.alive).every((p) => p.answered);
-      if (allAnswered) revealAndEliminate(io, roomCode);
+      if (allAnswered) {
+        clearTimeout(game._questionTimeout);
+        revealAndEliminate(io, roomCode);
+      }
       break;
     }
     case "fifty": {
@@ -563,13 +623,21 @@ export function handleLifeline(io, socket, data) {
     case "time": {
       if (player.lifelines.time <= 0 || player.answered) return;
       player.lifelines.time--;
-      player.extraTime = 8;
-      const newTimerEnd = Date.now() + 8 * 1000 + Math.max(0, game.timerEnd - Date.now());
+      const remainingMs = Math.max(0, game.timerEnd - Date.now());
+      const newTimerEnd = Date.now() + 8000 + remainingMs;
+      const newTimerSeconds = Math.ceil((newTimerEnd - Date.now()) / 1000);
+
+      // Extend server-side timeout so the round doesn't end before the extra time runs out
+      clearTimeout(game._questionTimeout);
+      game._questionTimeout = setTimeout(() => {
+        revealAndEliminate(io, roomCode);
+      }, newTimerEnd - Date.now() + 2000);
 
       io.to(player.socketId).emit("pyramid:lifeline-used", {
         type: "time",
         lifelines: player.lifelines,
         newTimerEnd,
+        newTimerSeconds,
       });
       break;
     }
@@ -578,4 +646,14 @@ export function handleLifeline(io, socket, data) {
 
 export function getActiveGame(roomCode) {
   return activeGames.get(roomCode);
+}
+
+// Update player's socketId when they reconnect mid-game
+export function updatePyramidSocket(roomCode, token, socketId) {
+  const game = activeGames.get(roomCode);
+  if (!game) return;
+  const player = game.players.find((p) => p.token === token);
+  if (player) {
+    player.socketId = socketId;
+  }
 }

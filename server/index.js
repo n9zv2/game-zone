@@ -1,4 +1,5 @@
 import express from "express";
+import helmet from "helmet";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { fileURLToPath } from "url";
@@ -24,8 +25,9 @@ import {
   startPyramid,
   handlePyramidAnswer,
   handleLifeline,
+  updatePyramidSocket,
 } from "./games/pyramid.js";
-import { startArena, handleArenaSubmit } from "./games/arena.js";
+import { startArena, handleArenaSubmit, updateArenaSocket } from "./games/arena.js";
 import {
   startFitna, handleFitnaAction, handleFitnaCard, handleFitnaVote,
   handleDiscussionAction, handleSecretWordHint, handleFaceOffAnswer,
@@ -41,9 +43,37 @@ import {
 } from "./games/mutakhafy.js";
 
 const app = express();
+
+// Security headers (CSP configured to allow WebSocket + inline styles)
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      connectSrc: ["'self'", "wss:", "ws:"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:"],
+      fontSrc: ["'self'", "data:"],
+      scriptSrc: ["'self'"],
+    },
+  },
+}));
+
+// Limit JSON body size
+app.use(express.json({ limit: "10kb" }));
+
 const server = createServer(app);
+
+// CORS whitelist
+const ALLOWED_ORIGINS = [
+  "https://gamezon.app",
+  "https://www.gamezon.app",
+  "http://localhost:3000",
+];
 const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET", "POST"] },
+  cors: {
+    origin: ALLOWED_ORIGINS,
+    methods: ["GET", "POST"],
+  },
 });
 
 // Serve static frontend in production
@@ -56,12 +86,45 @@ initSessionLookup(getSession);
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 
+// Valid game types for room:start-game
+const VALID_GAME_TYPES = ["pyramid", "arena", "fitna", "salfa", "mutakhafy"];
+
 io.on("connection", (socket) => {
   let currentToken = null;
   let currentRoom = null;
 
+  // --- Rate limiting: 30 events/second per socket ---
+  let eventCount = 0;
+  const rateLimitInterval = setInterval(() => { eventCount = 0; }, 1000);
+  socket.use((_event, next) => {
+    eventCount++;
+    if (eventCount > 30) {
+      clearInterval(rateLimitInterval);
+      return socket.disconnect(true);
+    }
+    next();
+  });
+  socket.on("disconnect", () => clearInterval(rateLimitInterval));
+
+  // --- Input helpers ---
+  function sanitizeName(name) {
+    return typeof name === "string" ? name.trim().slice(0, 20) : "";
+  }
+  function sanitizeAvatar(avatar) {
+    return typeof avatar === "string" ? [...avatar].slice(0, 2).join("") : "";
+  }
+  function sanitizeText(text, maxLen = 200) {
+    return typeof text === "string" ? text.trim().slice(0, maxLen) : "";
+  }
+  function isValidRoomCode(code) {
+    return typeof code === "string" && /^[A-Z0-9]{5}$/i.test(code);
+  }
+
   // Session
   socket.on("session:create", ({ name, avatar }, cb) => {
+    name = sanitizeName(name);
+    avatar = sanitizeAvatar(avatar);
+    if (!name) return cb?.({ error: "الاسم مطلوب" });
     const session = createSession(name, avatar);
     currentToken = session.token;
     cb?.({ token: session.token, session });
@@ -74,6 +137,9 @@ io.on("connection", (socket) => {
   });
 
   socket.on("session:update", ({ token, name, avatar }, cb) => {
+    name = sanitizeName(name);
+    avatar = sanitizeAvatar(avatar);
+    if (!name) return cb?.({ error: "الاسم مطلوب" });
     const session = updateSession(token, { name, avatar });
     cb?.({ session });
   });
@@ -92,6 +158,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("room:join", ({ token, code }, cb) => {
+    if (!isValidRoomCode(code)) return cb?.({ error: "رمز الغرفة غير صالح" });
     const session = getSession(token);
     if (!session) return cb?.({ error: "جلسة غير صالحة" });
 
@@ -166,6 +233,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("room:start-game", ({ token, code, gameType, settings }, cb) => {
+    if (!VALID_GAME_TYPES.includes(gameType)) return cb?.({ error: "نوع لعبة غير صالح" });
     const result = startGame(code, token, gameType);
     if (result.error) return cb?.({ error: result.error });
 
@@ -225,6 +293,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("fitna:chat-message", (data) => {
+    if (data && typeof data.message === "string") data.message = sanitizeText(data.message);
     handleChatMessage(io, socket, data);
   });
 
@@ -242,6 +311,7 @@ io.on("connection", (socket) => {
 
   // Salfa events
   socket.on("salfa:hint", (data) => {
+    if (data && typeof data.hint === "string") data.hint = sanitizeText(data.hint, 100);
     handleHint(io, socket, data);
   });
 
@@ -289,6 +359,12 @@ io.on("connection", (socket) => {
     socket.join(`room:${code}`);
     currentRoom = code;
     currentToken = token;
+
+    // Update socketId in active game so player receives game events
+    if (room.status === "playing") {
+      if (room.gameType === "pyramid") updatePyramidSocket(code, token, socket.id);
+      if (room.gameType === "arena") updateArenaSocket(code, token, socket.id);
+    }
 
     const players = getPublicPlayers(room);
     cb?.({
