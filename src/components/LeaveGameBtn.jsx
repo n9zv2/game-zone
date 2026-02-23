@@ -37,11 +37,11 @@ export default function LeaveGameBtn({ onLeave }) {
 
   return (
     <button onClick={() => setConfirm(true)} style={{
-      position: "fixed", top: 12, left: 12, zIndex: 100,
-      width: 36, height: 36, borderRadius: "50%", border: `1px solid ${C.border}`,
-      background: `${C.bg2}cc`, color: C.muted, fontSize: 16, cursor: "pointer",
+      position: "fixed", top: 14, left: 14, zIndex: 100,
+      width: 48, height: 48, borderRadius: "50%", border: `2px solid ${C.border}`,
+      background: `${C.bg2}ee`, color: "#fff", fontSize: 22, fontWeight: 700, cursor: "pointer",
       display: "flex", alignItems: "center", justifyContent: "center",
-      backdropFilter: "blur(8px)",
+      backdropFilter: "blur(8px)", boxShadow: "0 2px 12px rgba(0,0,0,0.4)",
     }} title="خروج">✕</button>
   );
 }
