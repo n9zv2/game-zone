@@ -6,8 +6,9 @@ import ArenaChampion from "./ArenaChampion.jsx";
 import { C } from "../../theme.js";
 import Badge from "../../components/ui/Badge.jsx";
 import ReactionBar from "../../components/ReactionBar.jsx";
+import LeaveGameBtn from "../../components/LeaveGameBtn.jsx";
 
-export default function ArenaGame({ token, roomCode, onFinish }) {
+export default function ArenaGame({ token, roomCode, onFinish, onLeave }) {
   const [phase, setPhase] = useState("waiting"); // waiting, countdown, round-intro, challenge, elimination, champion
   const [countdown, setCountdown] = useState(3);
   const [players, setPlayers] = useState([]);
@@ -162,6 +163,7 @@ export default function ArenaGame({ token, roomCode, onFinish }) {
 
   return (
     <>
+      <LeaveGameBtn onLeave={onLeave} />
       <div style={{ paddingBottom: showReactions ? 56 : 0 }}>{renderPhase()}</div>
       {showReactions && <ReactionBar roomCode={roomCode} token={token} />}
     </>

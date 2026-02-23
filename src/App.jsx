@@ -30,52 +30,72 @@ export default function GameZone() {
   const [levelUpLevel, setLevelUpLevel] = useState(null);
   const [soloMode, setSoloMode] = useState(false);
 
+  // Emit with timeout — if callback doesn't fire within ms, resolve with fallback
+  const emitWithTimeout = useCallback((event, data, ms = 5000) => {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(null), ms);
+      socket.emit(event, data, (res) => {
+        clearTimeout(timer);
+        resolve(res);
+      });
+    });
+  }, []);
+
   // Initialize: connect socket, check session
   useEffect(() => {
     socket.connect();
 
-    socket.on("connect", () => {
+    // Safety: if still loading after 8 seconds, force out
+    const loadingSafety = setTimeout(() => {
+      setScreen((prev) => {
+        if (prev === "loading") {
+          const hasId = session.getToken() && session.getName();
+          return hasId ? "landing" : "identity";
+        }
+        return prev;
+      });
+    }, 8000);
+
+    socket.on("connect", async () => {
       setConnectionError(false);
       const savedToken = session.getToken();
       const savedName = session.getName();
       const savedAvatar = session.getAvatar();
 
       if (savedToken && savedName && savedAvatar) {
-        // Validate session with server
-        socket.emit("session:get", { token: savedToken }, (res) => {
-          if (res?.session) {
-            setToken(savedToken);
-            setName(savedName);
-            setAvatar(savedAvatar);
+        // Validate session with server (5s timeout)
+        const res = await emitWithTimeout("session:get", { token: savedToken });
+        if (res?.session) {
+          setToken(savedToken);
+          setName(savedName);
+          setAvatar(savedAvatar);
 
-            // Check if was in a room
-            const savedRoom = session.getRoomCode();
-            if (savedRoom) {
-              socket.emit("room:rejoin", { token: savedToken, code: savedRoom }, (rejoinRes) => {
-                if (rejoinRes?.code) {
-                  setRoomCode(rejoinRes.code);
-                  setPlayers(rejoinRes.players);
-                  setIsHost(rejoinRes.isHost);
-                  if (rejoinRes.status === "playing") {
-                    setGameType(rejoinRes.gameType);
-                    setScreen(rejoinRes.gameType);
-                  } else {
-                    setScreen("lobby");
-                  }
-                } else {
-                  session.setRoomCode(null);
-                  setScreen("landing");
-                }
-              });
+          // Check if was in a room
+          const savedRoom = session.getRoomCode();
+          if (savedRoom) {
+            const rejoinRes = await emitWithTimeout("room:rejoin", { token: savedToken, code: savedRoom });
+            if (rejoinRes?.code) {
+              setRoomCode(rejoinRes.code);
+              setPlayers(rejoinRes.players);
+              setIsHost(rejoinRes.isHost);
+              if (rejoinRes.status === "playing") {
+                setGameType(rejoinRes.gameType);
+                setScreen(rejoinRes.gameType);
+              } else {
+                setScreen("lobby");
+              }
             } else {
+              session.setRoomCode(null);
               setScreen("landing");
             }
           } else {
-            // Session invalid, clear and start fresh
-            session.clearSession();
-            setScreen("identity");
+            setScreen("landing");
           }
-        });
+        } else {
+          // Session invalid, clear and start fresh
+          session.clearSession();
+          setScreen("identity");
+        }
       } else {
         setScreen("identity");
       }
@@ -97,6 +117,7 @@ export default function GameZone() {
     });
 
     return () => {
+      clearTimeout(loadingSafety);
       socket.off("connect");
       socket.off("disconnect");
       socket.off("connect_error");
@@ -149,6 +170,17 @@ export default function GameZone() {
     setScreen(type);
   }, []);
 
+  const handleLeaveGame = useCallback(() => {
+    socket.emit("room:leave", { token, code: roomCode });
+    setRoomCode(null);
+    setPlayers([]);
+    setIsHost(false);
+    setGameType(null);
+    setSoloMode(false);
+    session.setRoomCode(null);
+    setScreen("landing");
+  }, [token, roomCode]);
+
   const handleGameFinish = useCallback((gameRankings) => {
     // Solo pyramid — skip dashboard, go to landing
     if (!gameRankings && soloMode) {
@@ -198,7 +230,15 @@ export default function GameZone() {
         return (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "70vh" }}>
             <div style={{ fontSize: 60, animation: "pulse 1.5s infinite" }}>🎮</div>
-            <div style={{ fontSize: 16, color: C.muted, marginTop: 12 }}>جاري الاتصال...</div>
+            <div style={{ fontSize: 16, color: C.muted, marginTop: 12 }}>
+              {connectionError ? "فشل الاتصال..." : "جاري الاتصال..."}
+            </div>
+            {connectionError && (
+              <button onClick={() => { socket.connect(); setConnectionError(false); }} style={{
+                marginTop: 16, padding: "10px 24px", borderRadius: 10, border: `1px solid ${C.green}`,
+                background: `${C.green}20`, color: C.green, fontSize: 14, fontWeight: 700, cursor: "pointer",
+              }}>🔄 إعادة المحاولة</button>
+            )}
           </div>
         );
       case "identity":
@@ -219,15 +259,15 @@ export default function GameZone() {
           />
         );
       case "pyramid":
-        return <PyramidGame token={token} roomCode={roomCode} onFinish={handleGameFinish} />;
+        return <PyramidGame token={token} roomCode={roomCode} onFinish={handleGameFinish} onLeave={handleLeaveGame} />;
       case "arena":
-        return <ArenaGame token={token} roomCode={roomCode} onFinish={handleGameFinish} />;
+        return <ArenaGame token={token} roomCode={roomCode} onFinish={handleGameFinish} onLeave={handleLeaveGame} />;
       case "fitna":
-        return <FitnaGame token={token} roomCode={roomCode} onFinish={handleGameFinish} />;
+        return <FitnaGame token={token} roomCode={roomCode} onFinish={handleGameFinish} onLeave={handleLeaveGame} />;
       case "salfa":
-        return <SalfaGame token={token} roomCode={roomCode} onFinish={handleGameFinish} />;
+        return <SalfaGame token={token} roomCode={roomCode} onFinish={handleGameFinish} onLeave={handleLeaveGame} />;
       case "mutakhafy":
-        return <MutakhafyGame token={token} roomCode={roomCode} onFinish={handleGameFinish} />;
+        return <MutakhafyGame token={token} roomCode={roomCode} onFinish={handleGameFinish} onLeave={handleLeaveGame} />;
       case "dashboard":
         return <Dashboard token={token} rankings={rankings} gameType={gameType} onPlayAgain={handlePlayAgain} xpData={xpData} />;
       default:

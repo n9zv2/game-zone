@@ -7,6 +7,7 @@ import PyramidDead from "./PyramidDead.jsx";
 import PyramidChampion from "./PyramidChampion.jsx";
 import { C } from "../../theme.js";
 import ReactionBar from "../../components/ReactionBar.jsx";
+import LeaveGameBtn from "../../components/LeaveGameBtn.jsx";
 
 const DIFF_META = {
   easy:    { name: "سهل",   color: C.green,  icon: "🟢" },
@@ -15,7 +16,7 @@ const DIFF_META = {
   extreme: { name: "خطير",  color: C.red,    icon: "🔴" },
 };
 
-export default function PyramidGame({ token, roomCode, onFinish }) {
+export default function PyramidGame({ token, roomCode, onFinish, onLeave }) {
   const [phase, setPhase] = useState("waiting"); // waiting, countdown, intro, question, elimination, champion
   const [countdown, setCountdown] = useState(3);
   const [players, setPlayers] = useState([]);
@@ -88,7 +89,7 @@ export default function PyramidGame({ token, roomCode, onFinish }) {
     if (data.type === "fifty") {
       setQuestionData((prev) => prev ? { ...prev, hidden: data.hidden, lifelines: data.lifelines } : prev);
     } else if (data.type === "time") {
-      setQuestionData((prev) => prev ? { ...prev, timerEnd: data.newTimerEnd, lifelines: data.lifelines } : prev);
+      setQuestionData((prev) => prev ? { ...prev, timerEnd: data.newTimerEnd, timerSeconds: data.newTimerSeconds, lifelines: data.lifelines } : prev);
     } else if (data.type === "skip") {
       setQuestionData((prev) => prev ? { ...prev, lifelines: data.lifelines } : prev);
     }
@@ -175,6 +176,7 @@ export default function PyramidGame({ token, roomCode, onFinish }) {
 
   return (
     <>
+      <LeaveGameBtn onLeave={onLeave} />
       <div style={{ paddingBottom: showReactions ? 56 : 0 }}>{renderPhase()}</div>
       {showReactions && <ReactionBar roomCode={roomCode} token={token} />}
     </>

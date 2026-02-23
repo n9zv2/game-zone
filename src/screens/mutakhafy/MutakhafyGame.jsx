@@ -8,8 +8,9 @@ import MutakhafyFinalGuess from "./MutakhafyFinalGuess.jsx";
 import MutakhafyReveal from "./MutakhafyReveal.jsx";
 import MutakhafyGameOver from "./MutakhafyGameOver.jsx";
 import { C } from "../../theme.js";
+import LeaveGameBtn from "../../components/LeaveGameBtn.jsx";
 
-export default function MutakhafyGame({ token, roomCode, onFinish }) {
+export default function MutakhafyGame({ token, roomCode, onFinish, onLeave }) {
   const [phase, setPhase] = useState("waiting");
   const [countdown, setCountdown] = useState(3);
   const [players, setPlayers] = useState([]);
@@ -161,5 +162,5 @@ export default function MutakhafyGame({ token, roomCode, onFinish }) {
     return null;
   };
 
-  return <div>{renderPhase()}</div>;
+  return <div><LeaveGameBtn onLeave={onLeave} />{renderPhase()}</div>;
 }
