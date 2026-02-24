@@ -10,19 +10,19 @@ export default function SalfaHints({ data, token, roomCode, hints, voteRequestIn
   const [submitting, setSubmitting] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
   const [voteRequested, setVoteRequested] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
   const inputRef = useRef(null);
   const ackTimerRef = useRef(null);
+  const cooldownRef = useRef(null);
 
   // Check if already submitted this round
   useEffect(() => {
-    const alreadySubmitted = hints.some((h) => h.token === token && h.round === data.roundNumber);
-    setSubmitted(alreadySubmitted);
     setVoteRequested(false);
-    if (!alreadySubmitted) {
-      setMyHint("");
-      setSubmitting(false);
-    }
-  }, [data.roundNumber, hints, token]);
+    setMyHint("");
+    setSubmitting(false);
+    setSubmitted(false);
+    setCooldown(0);
+  }, [data.roundNumber]);
 
   // Listen for hint-ack from server
   useEffect(() => {
@@ -30,9 +30,23 @@ export default function SalfaHints({ data, token, roomCode, hints, voteRequestIn
       clearTimeout(ackTimerRef.current);
       setSubmitting(false);
       setSubmitted(true);
+      // Start 15-second cooldown then allow new hint
+      setCooldown(15);
+      clearInterval(cooldownRef.current);
+      cooldownRef.current = setInterval(() => {
+        setCooldown((prev) => {
+          if (prev <= 1) {
+            clearInterval(cooldownRef.current);
+            setSubmitted(false);
+            setMyHint("");
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
     };
     socket.on("salfa:hint-ack", onAck);
-    return () => socket.off("salfa:hint-ack", onAck);
+    return () => { socket.off("salfa:hint-ack", onAck); clearInterval(cooldownRef.current); };
   }, []);
 
   // Timer countdown
@@ -111,6 +125,7 @@ export default function SalfaHints({ data, token, roomCode, hints, voteRequestIn
         <Card style={{ marginBottom: 12, padding: 14, border: `1px solid ${C.green}30`, background: `${C.green}08` }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: C.green, textAlign: "center" }}>
             ✅ تم إرسال تلميحك
+            {cooldown > 0 && <span style={{ color: C.muted, fontWeight: 400 }}> — تلميح جديد بعد {cooldown}ث</span>}
           </div>
         </Card>
       )}

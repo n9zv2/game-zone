@@ -64,6 +64,14 @@ export default function SalfaVoting({ data, token, roomCode }) {
         })}
       </div>
 
+      {!voted && (
+        <button onClick={() => castVote("__skip__")} style={{
+          width: "100%", marginTop: 12, padding: 14, borderRadius: 10,
+          border: `1px solid ${C.border}`, background: "rgba(255,255,255,0.03)",
+          color: C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer",
+        }}>⏭️ تخطي (ما أبي أصوت)</button>
+      )}
+
       {voted && (
         <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: C.green, fontWeight: 700 }}>
           ✅ تم التصويت — بانتظار البقية...

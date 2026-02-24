@@ -35,7 +35,7 @@ import {
 } from "./games/fitna.js";
 import {
   startSalfa, handleHint, handleVoteRequest, handleVote as handleSalfaVote,
-  handleSpyGuess,
+  handleSpyGuess, updateSalfaSocket,
 } from "./games/salfa.js";
 import {
   startMutakhafy, handleMutakhafySubmit, handleMutakhafyGuess,
@@ -364,6 +364,7 @@ io.on("connection", (socket) => {
     if (room.status === "playing") {
       if (room.gameType === "pyramid") updatePyramidSocket(code, token, socket.id);
       if (room.gameType === "arena") updateArenaSocket(code, token, socket.id);
+      if (room.gameType === "salfa") updateSalfaSocket(io, code, token, socket.id);
     }
 
     const players = getPublicPlayers(room);

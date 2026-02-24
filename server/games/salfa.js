@@ -4,6 +4,7 @@ import { finishGame } from "../roomManager.js";
 import { addScore } from "../sessionManager.js";
 
 const activeGames = new Map();
+const MAX_ROUND_PHASE_MS = 300000; // 5 minutes safety — no phase should last longer
 
 // ============================================================
 // Start Salfa — "مين برا السالفة" (Spyfall)
@@ -18,7 +19,10 @@ export function startSalfa(io, room, settings = {}) {
 
   const playerCount = connectedPlayers.length;
   const totalRounds = Math.max(1, Math.min(7, settings.rounds || 3));
-  const spyCount = getSpyCount(playerCount);
+  // Host can set spy count (1-3), or 0/null for auto
+  const spyCount = settings.spyCount > 0
+    ? Math.min(settings.spyCount, Math.max(1, playerCount - 2))
+    : getSpyCount(playerCount);
 
   const players = connectedPlayers.map((p) => ({
     token: p.token,
@@ -64,11 +68,16 @@ export function startSalfa(io, room, settings = {}) {
   // Countdown
   let count = 3;
   const countInterval = setInterval(() => {
-    io.to(roomId).emit("salfa:countdown", { count });
-    count--;
-    if (count < 0) {
+    try {
+      io.to(roomId).emit("salfa:countdown", { count });
+      count--;
+      if (count < 0) {
+        clearInterval(countInterval);
+        startRound(io, game);
+      }
+    } catch (err) {
+      console.error("[salfa] countdown error:", err);
       clearInterval(countInterval);
-      startRound(io, game);
     }
   }, 1000);
 }
@@ -128,10 +137,24 @@ function startRound(io, game) {
     });
   });
 
-  // After 5 seconds, start hint phase
+  // After 10 seconds, start hint phase (longer so players can read the word)
   game._timeout = setTimeout(() => {
-    startHintRound(io, game);
-  }, 5000);
+    try {
+      startHintRound(io, game);
+    } catch (err) {
+      console.error("[salfa] startHintRound error:", err);
+      safeEndGame(io, game);
+    }
+  }, 10000);
+
+  // Safety timeout — if the round somehow gets stuck, force end
+  clearTimeout(game._safetyTimeout);
+  game._safetyTimeout = setTimeout(() => {
+    if (game.phase !== "game-over" && game.phase !== "round-result") {
+      console.warn(`[salfa] Safety timeout triggered for ${game.roomCode} in phase ${game.phase}`);
+      safeEndGame(io, game);
+    }
+  }, MAX_ROUND_PHASE_MS);
 }
 
 // ============================================================
@@ -161,8 +184,13 @@ function startHintRound(io, game) {
   // Auto-end after max round time (3 minutes) — force voting
   clearTimeout(game._hintTimeout);
   game._hintTimeout = setTimeout(() => {
-    if (game.phase === "hints") {
-      startVoting(io, game);
+    try {
+      if (game.phase === "hints") {
+        startVoting(io, game);
+      }
+    } catch (err) {
+      console.error("[salfa] hint timeout error:", err);
+      safeEndGame(io, game);
     }
   }, game.maxRoundTime);
 }
@@ -177,11 +205,17 @@ export function handleHint(io, socket, data) {
 
   const player = game.players.find((p) => p.token === token);
   if (!player) return;
-  if (game.hintsSubmitted.has(token)) return;
+
+  // Allow multiple hints per player with 15-second cooldown
+  const lastHintTime = game._lastHintTime?.get(token) || 0;
+  const cooldown = game.hintsSubmitted.has(token) ? 15000 : 0; // first hint = no cooldown
+  if (Date.now() - lastHintTime < cooldown) return;
 
   const cleanHint = (hint || "").trim().slice(0, 30);
   if (!cleanHint) return;
 
+  if (!game._lastHintTime) game._lastHintTime = new Map();
+  game._lastHintTime.set(token, Date.now());
   game.hintsSubmitted.add(token);
 
   const hintEntry = {
@@ -197,30 +231,14 @@ export function handleHint(io, socket, data) {
   io.to(roomId).emit("salfa:hint-submitted", hintEntry);
   socket.emit("salfa:hint-ack");
 
-  // Check if all players have submitted
+  // Notify when all players have submitted at least one hint this round
   if (game.hintsSubmitted.size >= game.players.length) {
-    // All hints in — emit all hints and check if we should start next round or voting
     io.to(roomId).emit("salfa:all-hints", {
       hints: game.hints.filter((h) => h.round === game.hintRound),
       voteRequestCount: game.voteRequests.size,
       totalPlayers: game.players.length,
     });
-
-    // If max hint rounds reached, force voting
-    if (game.hintRound >= game.maxHintRounds) {
-      clearTimeout(game._hintTimeout);
-      game._timeout = setTimeout(() => {
-        startVoting(io, game);
-      }, 2000);
-      return;
-    }
-
-    // Otherwise, start next hint round after short delay
-    game._timeout = setTimeout(() => {
-      if (game.phase === "hints") {
-        startHintRound(io, game);
-      }
-    }, 2000);
+    // Don't auto-advance — players can submit more hints. Let timer or vote requests end the round.
   }
 }
 
@@ -249,7 +267,12 @@ export function handleVoteRequest(io, socket, data) {
     clearTimeout(game._timeout);
     clearTimeout(game._hintTimeout);
     game._timeout = setTimeout(() => {
-      startVoting(io, game);
+      try {
+        startVoting(io, game);
+      } catch (err) {
+        console.error("[salfa] startVoting error:", err);
+        safeEndGame(io, game);
+      }
     }, 1000);
   }
 }
@@ -274,7 +297,12 @@ function startVoting(io, game) {
   });
 
   game._timeout = setTimeout(() => {
-    resolveVote(io, game);
+    try {
+      resolveVote(io, game);
+    } catch (err) {
+      console.error("[salfa] resolveVote timeout error:", err);
+      safeEndGame(io, game);
+    }
   }, voteTime + 1000);
 }
 
@@ -290,13 +318,19 @@ export function handleVote(io, socket, data) {
   if (!player) return;
   if (game.votes.has(token)) return;
 
-  game.votes.set(token, targetToken);
+  // "__skip__" = player chose not to vote
+  game.votes.set(token, targetToken === "__skip__" ? null : targetToken);
 
   // Check if all voted
   if (game.votes.size >= game.players.length) {
     clearTimeout(game._timeout);
     game._timeout = setTimeout(() => {
-      resolveVote(io, game);
+      try {
+        resolveVote(io, game);
+      } catch (err) {
+        console.error("[salfa] resolveVote error:", err);
+        safeEndGame(io, game);
+      }
     }, 500);
   }
 }
@@ -358,17 +392,17 @@ function resolveVote(io, game) {
   if (tied) {
     // Tie — spy wins
     game._timeout = setTimeout(() => {
-      endRound(io, game, "spy");
+      try { endRound(io, game, "spy"); } catch (err) { console.error("[salfa] endRound error:", err); safeEndGame(io, game); }
     }, 4000);
   } else if (isSpy) {
     // Correct! Spy caught — give spy a chance to guess
     game._timeout = setTimeout(() => {
-      startSpyGuess(io, game, accusedToken);
+      try { startSpyGuess(io, game, accusedToken); } catch (err) { console.error("[salfa] startSpyGuess error:", err); safeEndGame(io, game); }
     }, 4000);
   } else {
     // Wrong person accused — spy wins
     game._timeout = setTimeout(() => {
-      endRound(io, game, "spy");
+      try { endRound(io, game, "spy"); } catch (err) { console.error("[salfa] endRound error:", err); safeEndGame(io, game); }
     }, 4000);
   }
 }
@@ -407,9 +441,13 @@ function startSpyGuess(io, game, caughtSpyToken) {
   });
 
   game._timeout = setTimeout(() => {
-    // Time's up — spy didn't guess
-    if (game.phase === "spy-guess") {
-      resolveSpyGuess(io, game, null);
+    try {
+      if (game.phase === "spy-guess") {
+        resolveSpyGuess(io, game, null);
+      }
+    } catch (err) {
+      console.error("[salfa] spy guess timeout error:", err);
+      safeEndGame(io, game);
     }
   }, guessTime + 1000);
 }
@@ -451,12 +489,12 @@ function resolveSpyGuess(io, game, guess) {
   if (correct) {
     // Spy guessed correctly — spy wins!
     game._timeout = setTimeout(() => {
-      endRound(io, game, "spy-guessed");
+      try { endRound(io, game, "spy-guessed"); } catch (err) { console.error("[salfa] endRound error:", err); safeEndGame(io, game); }
     }, 4000);
   } else {
     // Spy guessed wrong — innocents win
     game._timeout = setTimeout(() => {
-      endRound(io, game, "innocents");
+      try { endRound(io, game, "innocents"); } catch (err) { console.error("[salfa] endRound error:", err); safeEndGame(io, game); }
     }, 4000);
   }
 }
@@ -536,11 +574,11 @@ function endRound(io, game, outcome) {
   // Check if more rounds
   if (game.currentRound < game.totalRounds) {
     game._timeout = setTimeout(() => {
-      startRound(io, game);
+      try { startRound(io, game); } catch (err) { console.error("[salfa] startRound error:", err); safeEndGame(io, game); }
     }, 6000);
   } else {
     game._timeout = setTimeout(() => {
-      endGame(io, game);
+      try { endGame(io, game); } catch (err) { console.error("[salfa] endGame error:", err); safeEndGame(io, game); }
     }, 6000);
   }
 }
@@ -551,6 +589,8 @@ function endRound(io, game, outcome) {
 function endGame(io, game) {
   game.phase = "game-over";
   clearTimeout(game._timeout);
+  clearTimeout(game._hintTimeout);
+  clearTimeout(game._safetyTimeout);
 
   const roomId = `room:${game.roomCode}`;
 
@@ -585,6 +625,78 @@ function endGame(io, game) {
 
   finishGame(game.roomCode);
   setTimeout(() => { activeGames.delete(game.roomCode); }, 5000);
+}
+
+// ============================================================
+// Safety: force-end a stuck game to prevent server hangs
+// ============================================================
+function safeEndGame(io, game) {
+  try {
+    clearTimeout(game._timeout);
+    clearTimeout(game._hintTimeout);
+    console.warn(`[salfa] Force-ending stuck game ${game.roomCode}`);
+    endGame(io, game);
+  } catch (err) {
+    console.error("[salfa] safeEndGame failed:", err);
+    finishGame(game.roomCode);
+    activeGames.delete(game.roomCode);
+  }
+}
+
+// ============================================================
+// Update socket ID for reconnecting player
+// ============================================================
+export function updateSalfaSocket(io, roomCode, token, socketId) {
+  const game = activeGames.get(roomCode);
+  if (!game) return;
+
+  const player = game.players.find((p) => p.token === token);
+  if (!player) return;
+  player.socketId = socketId;
+
+  // Send current game state to the reconnecting player so they're not stuck
+  const isSpy = game.spyTokens.includes(token);
+
+  if (game.phase === "role-reveal") {
+    io.to(socketId).emit("salfa:role-reveal", {
+      role: isSpy ? "spy" : "innocent",
+      word: isSpy ? null : game.word,
+      category: isSpy ? null : game.category,
+      roundIdx: game.currentRound,
+      totalRounds: game.totalRounds,
+      spyCount: game.spyCount,
+    });
+  } else if (game.phase === "hints") {
+    io.to(socketId).emit("salfa:hint-round", {
+      roundNumber: game.hintRound,
+      hintOrder: game.hintOrder.map((t) => {
+        const p = game.players.find((pl) => pl.token === t);
+        return { token: p.token, name: p.name, avatar: p.avatar };
+      }),
+      players: game.players.map((p) => ({ token: p.token, name: p.name, avatar: p.avatar })),
+      timerEnd: game.roundTimerStart + game.maxRoundTime,
+      voteRequestCount: game.voteRequests.size,
+      totalPlayers: game.players.length,
+    });
+    // Send existing hints
+    game.hints.forEach((h) => {
+      io.to(socketId).emit("salfa:hint-submitted", h);
+    });
+  } else if (game.phase === "voting") {
+    io.to(socketId).emit("salfa:voting", {
+      players: game.players.map((p) => ({ token: p.token, name: p.name, avatar: p.avatar })),
+      timerEnd: game.timerEnd,
+    });
+  } else if (game.phase === "spy-guess") {
+    io.to(socketId).emit("salfa:spy-guess", {
+      spyToken: game.caughtSpyToken,
+      spyName: game.players.find((p) => p.token === game.caughtSpyToken)?.name,
+      timerEnd: game.timerEnd,
+      isSpy: token === game.caughtSpyToken,
+      category: game.category,
+      options: token === game.caughtSpyToken ? [] : [], // don't resend options for spy guess
+    });
+  }
 }
 
 // ============================================================

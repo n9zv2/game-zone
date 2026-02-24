@@ -35,6 +35,7 @@ export default function Lobby({ token, roomCode, initialPlayers, isHost: initial
   const [fitnaVoteTime, setFitnaVoteTime] = useState(30);
   // Salfa settings
   const [salfaRounds, setSalfaRounds] = useState(3);
+  const [salfaSpyCount, setSalfaSpyCount] = useState(0); // 0 = auto
   // Mutakhafy settings
   const [mutakhafyRounds, setMutakhafyRounds] = useState(0); // 0 = auto
 
@@ -114,7 +115,7 @@ export default function Lobby({ token, roomCode, initialPlayers, isHost: initial
         voteTime: fitnaVoteTime,
       };
     } else if (selectedGame === "salfa") {
-      payload.settings = { rounds: salfaRounds };
+      payload.settings = { rounds: salfaRounds, spyCount: salfaSpyCount };
     } else if (selectedGame === "mutakhafy") {
       payload.settings = { rounds: mutakhafyRounds || 0 };
     }
@@ -310,8 +311,23 @@ export default function Lobby({ token, roomCode, initialPlayers, isHost: initial
                   ))}
                 </div>
               </div>
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>عدد الجواسيس</div>
+                <div style={{ display: "flex", gap: 4 }}>
+                  {[0, 1, 2, 3].map((n) => (
+                    <button key={n} onClick={() => setSalfaSpyCount(n)} style={{
+                      flex: 1, padding: "6px 0", border: `1px solid ${salfaSpyCount === n ? C.cyan : C.border}`,
+                      borderRadius: 6, background: salfaSpyCount === n ? `${C.cyan}20` : "transparent",
+                      color: salfaSpyCount === n ? C.cyan : C.muted, fontSize: 12, fontWeight: 800,
+                      cursor: "pointer", fontFamily: "inherit",
+                    }}>{n === 0 ? "تلقائي" : n}</button>
+                  ))}
+                </div>
+              </div>
               <div style={{ fontSize: 11, color: C.muted, textAlign: "center", marginTop: 8 }}>
-                {connectedCount} لاعب → {connectedCount >= 8 ? "2 جاسوس" : "1 جاسوس"} (تلقائي)
+                {salfaSpyCount === 0
+                  ? `${connectedCount} لاعب → ${connectedCount >= 8 ? "2 جاسوس" : "1 جاسوس"} (تلقائي)`
+                  : `${salfaSpyCount} جاسوس`}
               </div>
             </Card>
           )}
