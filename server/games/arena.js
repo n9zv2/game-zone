@@ -8,6 +8,8 @@ import {
 } from "../data/challenges.js";
 import { finishGame } from "../roomManager.js";
 import { addScore } from "../sessionManager.js";
+import { isBot } from "../botManager.js";
+import { scheduleBotActions } from "../botAI.js";
 
 const activeGames = new Map();
 
@@ -228,6 +230,9 @@ function sendChallenge(io, roomCode) {
     timerEnd: game.timerEnd,
     spectatorCount,
   });
+
+  // Schedule bot actions
+  scheduleBotActions(io, game, "arena", "challenge", { handleArenaSubmit });
 
   // Timeout
   game._roundTimeout = setTimeout(() => {
@@ -475,6 +480,7 @@ function endGame(io, roomCode) {
   const champion = ranked[0];
 
   ranked.forEach((p, idx) => {
+    if (isBot(p.token)) return; // Skip XP for bots
     const result = addScore(p.token, p.score, idx === 0);
     if (result && p.socketId) {
       io.to(p.socketId).emit("session:xp-update", {

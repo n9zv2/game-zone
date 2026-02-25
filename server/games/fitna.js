@@ -6,6 +6,8 @@ import {
 } from "../data/fitnaData.js";
 import { finishGame } from "../roomManager.js";
 import { addScore } from "../sessionManager.js";
+import { isBot } from "../botManager.js";
+import { scheduleBotActions } from "../botAI.js";
 
 const activeGames = new Map();
 let io_ref = null;
@@ -238,6 +240,9 @@ function startLoyaltyTest(io, game) {
     });
   });
 
+  // Schedule bot actions
+  scheduleBotActions(io, game, "fitna", "loyalty_test", getFitnaHandlers());
+
   // Timer
   game._timeout = setTimeout(() => {
     // Auto-answer for non-responders
@@ -376,6 +381,9 @@ function startFaceOff(io, game) {
     });
   });
 
+  // Schedule bot actions
+  scheduleBotActions(io, game, "fitna", "face_off", getFitnaHandlers());
+
   // Timer
   game._timeout = setTimeout(() => {
     // Auto-answer for non-responders
@@ -487,6 +495,9 @@ function startSecretWord(io, game) {
     });
   });
 
+  // Schedule bot actions
+  scheduleBotActions(io, game, "fitna", "secret_word", getFitnaHandlers());
+
   game._timeout = setTimeout(() => {
     finishSecretWord(io, game);
   }, time * 1000 + 1000);
@@ -556,6 +567,9 @@ function startDiscussion(io, game) {
     })),
     evidence: game.evidence,
   });
+
+  // Schedule bot discussion actions
+  scheduleBotActions(io, game, "fitna", "discussion", getFitnaHandlers());
 
   game._timeout = setTimeout(() => {
     startCardPhase(io, game);
@@ -655,6 +669,9 @@ function startCardPhase(io, game) {
       })),
     });
   });
+
+  // Schedule bot card actions
+  scheduleBotActions(io, game, "fitna", "cards", getFitnaHandlers());
 
   game._timeout = setTimeout(() => {
     applyCards(io, game);
@@ -771,6 +788,9 @@ function startVoting(io, game) {
       silenced: game.silencedTokens.has(player.token),
     });
   });
+
+  // Schedule bot votes
+  scheduleBotActions(io, game, "fitna", "voting", getFitnaHandlers());
 
   game._timeout = setTimeout(() => {
     tallyVotes(io, game);
@@ -945,6 +965,9 @@ function startNightPhase(io, game) {
       });
     }
   });
+
+  // Schedule bot night actions
+  scheduleBotActions(io, game, "fitna", "night", getFitnaHandlers());
 
   game._timeout = setTimeout(() => {
     resolveNight(io, game);
@@ -1193,6 +1216,17 @@ function proceedToNextRound(io, game) {
 }
 
 // ============================================================
+// Bot handler references (for scheduleBotActions)
+// ============================================================
+function getFitnaHandlers() {
+  return {
+    handleFitnaAction, handleFaceOffAnswer, handleSecretWordHint,
+    handleFitnaVote, handleFitnaCard, handleNightAction,
+    handleDiscussionAction, handleChatMessage,
+  };
+}
+
+// ============================================================
 // End Game
 // ============================================================
 function endGame(io, game, winner) {
@@ -1280,8 +1314,9 @@ function endGame(io, game, winner) {
     roundsPlayed: game.roundIdx + 1,
   });
 
-  // Add scores + XP for all players
+  // Add scores + XP for all players (skip bots)
   game.players.forEach((p) => {
+    if (isBot(p.token)) return;
     const ranking = rankings.find((r) => r.token === p.token);
     if (!ranking) return;
 

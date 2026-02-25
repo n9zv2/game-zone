@@ -41,6 +41,7 @@ import {
   startMutakhafy, handleMutakhafySubmit, handleMutakhafyGuess,
   handleMutakhafyFinalGuesses,
 } from "./games/mutakhafy.js";
+import { createBot, removeBot } from "./botManager.js";
 
 const app = express();
 
@@ -204,6 +205,37 @@ io.on("connection", (socket) => {
     io.to(`room:${code}`).emit("room:player-kicked", {
       players,
       kickedToken: targetToken,
+    });
+    cb?.({ ok: true });
+  });
+
+  // Bot management (host only)
+  socket.on("room:add-bot", ({ token, code }, cb) => {
+    const room = getRoom(code);
+    if (!room) return cb?.({ error: "الغرفة غير موجودة" });
+    if (room.hostToken !== token) return cb?.({ error: "أنت لست الهوست" });
+
+    const result = createBot(code);
+    if (result.error) return cb?.({ error: result.error });
+
+    const players = getPublicPlayers(room);
+    io.to(`room:${code}`).emit("room:player-joined", { players });
+    cb?.({ ok: true, botToken: result.token });
+  });
+
+  socket.on("room:remove-bot", ({ token, code, botToken }, cb) => {
+    const room = getRoom(code);
+    if (!room) return cb?.({ error: "الغرفة غير موجودة" });
+    if (room.hostToken !== token) return cb?.({ error: "أنت لست الهوست" });
+
+    const result = removeBot(code, botToken);
+    if (result.error) return cb?.({ error: result.error });
+
+    const players = getPublicPlayers(room);
+    io.to(`room:${code}`).emit("room:player-left", {
+      players,
+      leftToken: botToken,
+      newHost: room.hostToken,
     });
     cb?.({ ok: true });
   });
@@ -386,7 +418,9 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     const result = disconnectPlayer(socket.id);
     if (result) {
-      const { code, room, player } = result;
+      const { code, room, player, deleted } = result;
+      if (deleted) return; // Room was cleaned up (all real players gone)
+
       const players = getPublicPlayers(room);
 
       // Check if host left and was transferred

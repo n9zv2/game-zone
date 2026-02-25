@@ -7,6 +7,8 @@ import {
 } from "../data/mutakhafyData.js";
 import { finishGame } from "../roomManager.js";
 import { addScore } from "../sessionManager.js";
+import { isBot } from "../botManager.js";
+import { scheduleBotActions } from "../botAI.js";
 
 const activeGames = new Map();
 
@@ -257,6 +259,9 @@ function startActivity(io, game, type) {
   const roomId = `room:${game.roomCode}`;
   io.to(roomId).emit("mutakhafy:activity", { type, data, timerEnd });
 
+  // Schedule bot activity submissions
+  scheduleBotActions(io, game, "mutakhafy", "activity", { handleMutakhafySubmit });
+
   game._timeout = setTimeout(() => {
     showResults(io, game);
   }, timer * 1000 + 1000);
@@ -412,6 +417,9 @@ function startGuessPhase(io, game) {
     });
   });
 
+  // Schedule bot guesses
+  scheduleBotActions(io, game, "mutakhafy", "guess", { handleMutakhafyGuess });
+
   game._timeout = setTimeout(() => {
     endGuessPhase(io, game);
   }, guessTime + 1000);
@@ -523,6 +531,9 @@ function startFinalGuess(io, game) {
       myFakeId: player.fakeId,
     });
   });
+
+  // Schedule bot final guesses
+  scheduleBotActions(io, game, "mutakhafy", "final-guess", { handleMutakhafyFinalGuesses });
 
   game._timeout = setTimeout(() => {
     startReveal(io, game);
@@ -684,9 +695,10 @@ function endGame(io, game) {
 
   io.to(roomId).emit("mutakhafy:game-over", { rankings });
 
-  // Add XP
+  // Add XP (skip bots)
   refreshSocketIds(game);
   game.players.forEach((p) => {
+    if (isBot(p.token)) return;
     const ranking = rankings.find((r) => r.token === p.token);
     if (!ranking) return;
     const won = ranking.rank === 1;

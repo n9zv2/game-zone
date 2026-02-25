@@ -98,6 +98,16 @@ export default function Lobby({ token, roomCode, initialPlayers, isHost: initial
     socket.emit("room:kick", { token, code: roomCode, targetToken });
   };
 
+  const addBot = () => {
+    socket.emit("room:add-bot", { token, code: roomCode }, (res) => {
+      if (res?.error) setError(res.error);
+    });
+  };
+
+  const removeBot = (botToken) => {
+    socket.emit("room:remove-bot", { token, code: roomCode, botToken });
+  };
+
   const leave = () => {
     socket.emit("room:leave", { token, code: roomCode });
     onLeave();
@@ -125,7 +135,7 @@ export default function Lobby({ token, roomCode, initialPlayers, isHost: initial
     });
   };
 
-  const connectedCount = players.filter((p) => p.connected !== false).length;
+  const connectedCount = players.filter((p) => p.connected !== false || p.isBot).length;
 
   return (
     <div style={{ animation: "fadeIn 0.3s ease" }}>
@@ -165,18 +175,32 @@ export default function Lobby({ token, roomCode, initialPlayers, isHost: initial
                 </span>
                 {p.level > 1 && <Badge color={C.purple} style={{ marginRight: 6 }}>Lv.{p.level}</Badge>}
                 {p.isHost && <Badge color={C.gold} style={{ marginRight: 6 }}>👑 هوست</Badge>}
-                {p.connected === false && <Badge color={C.red}>منقطع</Badge>}
+                {p.isBot && <Badge color={C.orange} style={{ marginRight: 6 }}>بوت</Badge>}
+                {p.connected === false && !p.isBot && <Badge color={C.red}>منقطع</Badge>}
               </div>
-              {isHost && p.token !== token && (
+              {isHost && p.token !== token && !p.isBot && (
                 <button onClick={() => kickPlayer(p.token)} style={{
                   background: `${C.red}15`, border: `1px solid ${C.red}30`, borderRadius: 8,
                   padding: "4px 10px", fontSize: 11, color: C.red, cursor: "pointer", fontFamily: "inherit", fontWeight: 700,
                 }}>طرد</button>
               )}
+              {isHost && p.isBot && (
+                <button onClick={() => removeBot(p.token)} style={{
+                  background: `${C.red}15`, border: `1px solid ${C.red}30`, borderRadius: 8,
+                  padding: "4px 10px", fontSize: 11, color: C.red, cursor: "pointer", fontFamily: "inherit", fontWeight: 700,
+                }}>حذف</button>
+              )}
             </div>
           ))}
         </div>
       </Card>
+
+      {/* Add Bot (Host only) */}
+      {isHost && players.length < 20 && (
+        <Btn color={C.orange} onClick={addBot} style={{ marginBottom: 16, fontSize: 14 }}>
+          + أضف بوت
+        </Btn>
+      )}
 
       {/* Game Selection (Host only) */}
       {isHost ? (

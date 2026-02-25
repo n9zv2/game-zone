@@ -1,4 +1,5 @@
 import { genCode } from "./utils.js";
+import { isBot } from "./botManager.js";
 
 // In-memory room store
 const rooms = new Map();
@@ -72,17 +73,19 @@ export function leaveRoom(code, token) {
     player.connected = false;
   }
 
-  // Transfer host if needed
+  // Transfer host if needed — skip bots
   if (player.isHost && room.players.length > 0) {
     player.isHost = false;
-    const newHost = room.players.find((p) => p.connected);
+    const newHost = room.players.find((p) => p.connected && !isBot(p.token));
     if (newHost) {
       newHost.isHost = true;
       room.hostToken = newHost.token;
     }
   }
 
-  if (room.players.filter((p) => p.connected).length === 0) {
+  // If all real (non-bot) players left, delete the room
+  const realConnected = room.players.filter((p) => p.connected && !isBot(p.token));
+  if (realConnected.length === 0) {
     rooms.delete(code);
     return { deleted: true };
   }
@@ -119,6 +122,14 @@ export function disconnectPlayer(socketId) {
     if (player) {
       player.connected = false;
       player.socketId = null;
+
+      // If all real (non-bot) players disconnected, delete the room
+      const realConnected = room.players.filter((p) => p.connected && !isBot(p.token));
+      if (realConnected.length === 0) {
+        rooms.delete(code);
+        return { code, room, player, deleted: true };
+      }
+
       return { code, room, player };
     }
   }
@@ -156,6 +167,7 @@ export function getPublicPlayers(room) {
       avatar: p.avatar,
       connected: p.connected,
       isHost: p.isHost,
+      isBot: isBot(p.token),
       level: sess?.level || 1,
     };
   });

@@ -2,6 +2,8 @@ import { shuffle, pick } from "../utils.js";
 import { SALFA_WORDS, getSpyCount } from "../data/salfaData.js";
 import { finishGame } from "../roomManager.js";
 import { addScore } from "../sessionManager.js";
+import { isBot } from "../botManager.js";
+import { scheduleBotActions } from "../botAI.js";
 
 const activeGames = new Map();
 const MAX_ROUND_PHASE_MS = 300000; // 5 minutes safety — no phase should last longer
@@ -181,6 +183,11 @@ function startHintRound(io, game) {
     totalPlayers: game.players.length,
   });
 
+  // Schedule bot hints
+  scheduleBotActions(io, game, "salfa", "hints", {
+    handleHint, handleVoteRequest,
+  });
+
   // Auto-end after max round time (3 minutes) — force voting
   clearTimeout(game._hintTimeout);
   game._hintTimeout = setTimeout(() => {
@@ -229,7 +236,7 @@ export function handleHint(io, socket, data) {
 
   const roomId = `room:${roomCode}`;
   io.to(roomId).emit("salfa:hint-submitted", hintEntry);
-  socket.emit("salfa:hint-ack");
+  if (socket?.emit) socket.emit("salfa:hint-ack");
 
   // Notify when all players have submitted at least one hint this round
   if (game.hintsSubmitted.size >= game.players.length) {
@@ -295,6 +302,9 @@ function startVoting(io, game) {
     players: game.players.map((p) => ({ token: p.token, name: p.name, avatar: p.avatar })),
     timerEnd: game.timerEnd,
   });
+
+  // Schedule bot votes
+  scheduleBotActions(io, game, "salfa", "voting", { handleVote });
 
   game._timeout = setTimeout(() => {
     try {
@@ -443,6 +453,9 @@ function startSpyGuess(io, game, caughtSpyToken) {
       options: isCaughtSpy ? options : [],
     });
   });
+
+  // Schedule bot spy guess
+  scheduleBotActions(io, game, "salfa", "spy-guess", { handleSpyGuess, options });
 
   game._timeout = setTimeout(() => {
     try {
@@ -611,8 +624,9 @@ function endGame(io, game) {
 
   io.to(roomId).emit("salfa:game-over", { rankings });
 
-  // Add XP for all players
+  // Add XP for all players (skip bots)
   game.players.forEach((p) => {
+    if (isBot(p.token)) return;
     const ranking = rankings.find((r) => r.token === p.token);
     if (!ranking) return;
     const won = ranking.rank === 1;
