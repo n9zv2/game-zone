@@ -365,9 +365,12 @@ function resolveVote(io, game) {
     }
   }
 
-  // Tie or no votes → spy wins
-  const tied = candidates.length !== 1;
-  const accusedToken = tied ? null : candidates[0];
+  // Check tie — but if ALL tied candidates are spies, innocents win
+  const rawTied = candidates.length !== 1;
+  const allCandidatesAreSpies = rawTied && candidates.length > 0 && candidates.every((t) => game.spyTokens.includes(t));
+  // If all tied candidates are spies, pick the first one as accused (innocents caught them)
+  const tied = rawTied && !allCandidatesAreSpies;
+  const accusedToken = tied ? null : (allCandidatesAreSpies ? candidates[0] : candidates[0]);
   const accusedPlayer = accusedToken ? game.players.find((p) => p.token === accusedToken) : null;
   const isSpy = accusedToken ? game.spyTokens.includes(accusedToken) : false;
 
@@ -386,11 +389,12 @@ function resolveVote(io, game) {
     accusedAvatar: accusedPlayer?.avatar || null,
     isSpy: tied ? false : isSpy,
     tied,
+    allSpiesCaught: allCandidatesAreSpies,
     votes: voteDetails,
   });
 
   if (tied) {
-    // Tie — spy wins
+    // Tie (mixed spies/innocents or no votes) — spy wins
     game._timeout = setTimeout(() => {
       try { endRound(io, game, "spy"); } catch (err) { console.error("[salfa] endRound error:", err); safeEndGame(io, game); }
     }, 4000);

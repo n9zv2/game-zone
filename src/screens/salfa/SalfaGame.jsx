@@ -136,22 +136,32 @@ export default function SalfaGame({ token, roomCode, onFinish, onLeave }) {
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", padding: 20 }}>
           <div style={{ fontSize: 36, marginBottom: 16 }}>🗳️</div>
           <div style={{ fontSize: 18, fontWeight: 800, color: C.cyan, marginBottom: 20 }}>
-            {voteResultData.tied ? "تعادل! الجاسوس يفوز 🕵️" : voteResultData.isSpy ? `${voteResultData.accusedName} هو الجاسوس! 🎯` : `${voteResultData.accusedName} بريء! الجاسوس يفوز 🕵️`}
+            {voteResultData.tied ? "تعادل! الجاسوس يفوز 🕵️" : voteResultData.allSpiesCaught ? "تم كشف الجواسيس! 🎯" : voteResultData.isSpy ? `${voteResultData.accusedName} هو الجاسوس! 🎯` : `${voteResultData.accusedName} بريء! الجاسوس يفوز 🕵️`}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, width: "100%" }}>
-            {voteResultData.votes.sort((a, b) => b.votesReceived - a.votesReceived).map((v, i) => (
-              <div key={i} style={{
-                background: v.token === voteResultData.accusedToken ? `${voteResultData.isSpy ? C.green : C.red}15` : "rgba(255,255,255,0.03)",
-                border: `1px solid ${v.token === voteResultData.accusedToken ? (voteResultData.isSpy ? C.green : C.red) : C.border}`,
-                borderRadius: 10, padding: "8px 12px",
-                display: "flex", alignItems: "center", gap: 8,
-                animation: `su 0.3s ${i * 0.05}s backwards`,
-              }}>
-                <span style={{ fontSize: 20 }}>{v.avatar}</span>
-                <span style={{ fontSize: 13, fontWeight: 700, flex: 1, color: v.token === voteResultData.accusedToken ? (voteResultData.isSpy ? C.green : C.red) : C.text }}>{v.name}</span>
-                <span style={{ fontSize: 14, fontWeight: 800, color: v.votesReceived > 0 ? C.gold : C.muted }}>{v.votesReceived} 🗳️</span>
-              </div>
-            ))}
+            {(() => {
+              const sorted = voteResultData.votes.sort((a, b) => b.votesReceived - a.votesReceived);
+              const maxVotes = sorted[0]?.votesReceived || 0;
+              return sorted.map((v, i) => {
+                const isAccused = voteResultData.allSpiesCaught
+                  ? (v.votesReceived === maxVotes && maxVotes > 0)
+                  : v.token === voteResultData.accusedToken;
+                const isGood = voteResultData.allSpiesCaught || voteResultData.isSpy;
+                return (
+                  <div key={i} style={{
+                    background: isAccused ? `${isGood ? C.green : C.red}15` : "rgba(255,255,255,0.03)",
+                    border: `1px solid ${isAccused ? (isGood ? C.green : C.red) : C.border}`,
+                    borderRadius: 10, padding: "8px 12px",
+                    display: "flex", alignItems: "center", gap: 8,
+                    animation: `su 0.3s ${i * 0.05}s backwards`,
+                  }}>
+                    <span style={{ fontSize: 20 }}>{v.avatar}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, flex: 1, color: isAccused ? (isGood ? C.green : C.red) : C.text }}>{v.name}</span>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: v.votesReceived > 0 ? C.gold : C.muted }}>{v.votesReceived} 🗳️</span>
+                  </div>
+                );
+              });
+            })()}
           </div>
         </div>
       );

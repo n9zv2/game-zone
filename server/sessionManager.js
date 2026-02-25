@@ -24,10 +24,14 @@ export function getSession(token) {
   return sessions.get(token) || null;
 }
 
+const ALLOWED_UPDATE_FIELDS = ["name", "avatar"];
+
 export function updateSession(token, updates) {
   const session = sessions.get(token);
   if (!session) return null;
-  Object.assign(session, updates);
+  for (const key of ALLOWED_UPDATE_FIELDS) {
+    if (updates[key] !== undefined) session[key] = updates[key];
+  }
   return session;
 }
 
