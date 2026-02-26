@@ -1,5 +1,4 @@
 import { isBot, getBotDifficulty, getBotsInRoom } from "./botManager.js";
-import { REACTION_EMOJIS } from "./data/mutakhafyData.js";
 
 // ============================================================
 // Difficulty config
@@ -53,11 +52,8 @@ export function scheduleBotActions(io, game, gameType, phase, phaseData = {}) {
           case "salfa":
             handleSalfaBot(io, game, bot, config, phase, phaseData);
             break;
-          case "fitna":
-            handleFitnaBot(io, game, bot, config, phase, phaseData);
-            break;
-          case "mutakhafy":
-            handleMutakhafyBot(io, game, bot, config, phase, phaseData);
+          case "codenames":
+            handleCodenamesBot(io, game, bot, config, phase, phaseData);
             break;
         }
       } catch (err) {
@@ -259,293 +255,59 @@ function handleSalfaBot(io, game, bot, config, phase, data) {
 }
 
 // ============================================================
-// FITNA BOT
+// CODENAMES BOT (guesser only — bots are never spymaster)
 // ============================================================
-const FITNA_SECRET_HINTS_INNOCENT = [
-  "قريب من المعنى", "شي واضح", "يخليك تفكر", "مرتبط بشي نعرفه",
-  "مهم", "أساسي", "يومي", "طبيعي", "معروف",
-];
+function handleCodenamesBot(io, game, bot, config, phase, data) {
+  const { handleCodenamesClue, handleCodenamesGuess } = data;
 
-const FITNA_SECRET_HINTS_SABOTEUR = [
-  "شي ممكن", "فكرة عامة", "مو بعيد", "الله أعلم", "شي كذا",
-  "صعب أوصفه", "مو متأكد", "شي غريب شوي", "هممم",
-];
+  // Bot spymaster: give a generic clue
+  if (phase === "spymaster-clue") {
+    if (!handleCodenamesClue || game.phase !== "spymaster-turn") return;
+    const spymasterToken = game.teams[game.currentTeam]?.spymaster;
+    if (bot.token !== spymasterToken) return;
 
-const FITNA_CHAT_MESSAGES = [
-  "أنا بريء والله!", "هذا مشبوه!", "خلونا نفكر", "مين ما رد؟",
-  "أحس فيه خائن بينا", "ركزوا على اللي غلط", "أنا معكم",
-  "الموضوع واضح", "لازم نصوت صح", "انتبهوا",
-];
-
-function handleFitnaBot(io, game, bot, config, phase, data) {
-  const {
-    handleFitnaAction, handleFaceOffAnswer, handleSecretWordHint,
-    handleFitnaVote, handleFitnaCard, handleNightAction,
-    handleDiscussionAction, handleChatMessage,
-  } = data;
-
-  const isSaboteur = bot.role === "saboteur";
-
-  switch (phase) {
-    case "loyalty_test": {
-      if (!handleFitnaAction || game.phase !== "activity") return;
-      const correctIdx = game.loyaltyData?.correctIdx;
-      if (correctIdx === undefined) return;
-      let choice;
-      if (!isSaboteur) {
-        // Innocents know the answer
-        choice = correctIdx;
-      } else {
-        // Saboteurs guess — sometimes right by luck
-        choice = chance(config.correctChance)
-          ? correctIdx
-          : Math.floor(Math.random() * 4);
-      }
-      handleFitnaAction(io, DUMMY_SOCKET, {
-        roomCode: game.roomCode,
-        token: bot.token,
-        choiceIdx: choice,
-      });
-      break;
-    }
-    case "face_off": {
-      if (!handleFaceOffAnswer || game.phase !== "activity" || !game.faceOffData) return;
-      const pairIdx = game.faceOffData.pairs.findIndex((p) => p.tokens.includes(bot.token));
-      if (pairIdx === -1) return; // sitting out
-      const pair = game.faceOffData.pairs[pairIdx];
-      const correctIdx = pair.correctIdx;
-      let choice;
-      if (!isSaboteur) {
-        choice = correctIdx;
-      } else {
-        choice = chance(config.correctChance)
-          ? correctIdx
-          : Math.floor(Math.random() * 2);
-      }
-      handleFaceOffAnswer(io, DUMMY_SOCKET, {
-        roomCode: game.roomCode,
-        token: bot.token,
-        pairIdx,
-        choiceIdx: choice,
-      });
-      break;
-    }
-    case "secret_word": {
-      if (!handleSecretWordHint || game.phase !== "activity") return;
-      const hints = isSaboteur ? FITNA_SECRET_HINTS_SABOTEUR : FITNA_SECRET_HINTS_INNOCENT;
-      const hint = hints[Math.floor(Math.random() * hints.length)];
-      handleSecretWordHint(io, DUMMY_SOCKET, {
-        roomCode: game.roomCode,
-        token: bot.token,
-        hint,
-      });
-      break;
-    }
-    case "discussion": {
-      if (game.phase !== "discussion") return;
-      // Send a chat message
-      if (handleChatMessage && Math.random() < 0.6) {
-        const msg = FITNA_CHAT_MESSAGES[Math.floor(Math.random() * FITNA_CHAT_MESSAGES.length)];
-        handleChatMessage(io, DUMMY_SOCKET, {
-          roomCode: game.roomCode,
-          token: bot.token,
-          text: msg,
-        });
-      }
-      // Sometimes accuse someone
-      if (handleDiscussionAction && Math.random() < 0.3) {
-        const alivePlayers = game.players.filter((p) => p.alive && p.token !== bot.token);
-        if (alivePlayers.length > 0) {
-          const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
-          setTimeout(() => {
-            if (game.phase === "discussion") {
-              handleDiscussionAction(io, DUMMY_SOCKET, {
-                roomCode: game.roomCode,
-                token: bot.token,
-                action: "accuse",
-                targetToken: target.token,
-              });
-            }
-          }, 2000 + Math.random() * 3000);
-        }
-      }
-      break;
-    }
-    case "cards": {
-      if (!handleFitnaCard || game.phase !== "cards") return;
-      if (!bot.card) return;
-      // Play card on a random alive player
-      const targets = game.players.filter((p) => p.alive && p.token !== bot.token);
-      if (targets.length === 0) return;
-      const target = targets[Math.floor(Math.random() * targets.length)];
-      handleFitnaCard(io, DUMMY_SOCKET, {
-        roomCode: game.roomCode,
-        token: bot.token,
-        cardId: bot.card.id,
-        targetToken: target.token,
-      });
-      break;
-    }
-    case "voting": {
-      if (!handleFitnaVote || game.phase !== "voting") return;
-      if (game.silencedTokens?.has(bot.token)) return;
-      const alivePlayers = game.players.filter((p) => p.alive && p.token !== bot.token);
-      if (alivePlayers.length === 0) return;
-      let target;
-      if (!isSaboteur && chance(config.voteAccuracy)) {
-        // Try to vote for saboteur
-        const saboteurs = alivePlayers.filter((p) => p.role === "saboteur");
-        target = saboteurs.length > 0
-          ? saboteurs[Math.floor(Math.random() * saboteurs.length)]
-          : alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
-      } else if (isSaboteur) {
-        // Saboteur votes for innocent
-        const innocents = alivePlayers.filter((p) => p.role !== "saboteur");
-        target = innocents.length > 0
-          ? innocents[Math.floor(Math.random() * innocents.length)]
-          : alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
-      } else {
-        target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
-      }
-      handleFitnaVote(io, DUMMY_SOCKET, {
-        roomCode: game.roomCode,
-        token: bot.token,
-        targetToken: target.token,
-      });
-      break;
-    }
-    case "night": {
-      if (!handleNightAction || game.phase !== "night") return;
-      if (bot.role === "saboteur") {
-        // Kill a random non-saboteur
-        const targets = game.players.filter((p) => p.alive && p.role !== "saboteur");
-        if (targets.length > 0) {
-          const target = targets[Math.floor(Math.random() * targets.length)];
-          handleNightAction(io, DUMMY_SOCKET, {
-            roomCode: game.roomCode,
-            token: bot.token,
-            action: "kill",
-            targetToken: target.token,
-          });
-        }
-      } else if (bot.role === "detective") {
-        // Investigate random player
-        const targets = game.players.filter((p) => p.alive && p.token !== bot.token);
-        if (targets.length > 0) {
-          const target = targets[Math.floor(Math.random() * targets.length)];
-          handleNightAction(io, DUMMY_SOCKET, {
-            roomCode: game.roomCode,
-            token: bot.token,
-            action: "investigate",
-            targetToken: target.token,
-          });
-        }
-      }
-      break;
-    }
+    // Pick a simple clue — just say a vague word with count 1
+    const teamWords = game.grid.filter((c) => c.type === bot.team && !c.revealed);
+    const clueWord = teamWords.length > 0 ? "تلميح" : "تخمين";
+    handleCodenamesClue(io, DUMMY_SOCKET, {
+      roomCode: game.roomCode,
+      token: bot.token,
+      word: clueWord,
+      count: Math.min(2, teamWords.length),
+    });
+    return;
   }
-}
 
-// ============================================================
-// MUTAKHAFY BOT
-// ============================================================
-const MUTAKHAFY_WORD_RESPONSES = [
-  "حماس", "سعادة", "قوة", "هدوء", "فرح", "تركيز", "إبداع",
-  "شجاعة", "أمل", "نشاط", "طاقة", "ذكاء", "صبر",
-];
+  // Bot guesser: pick a word
+  if (phase === "guess") {
+    if (!handleCodenamesGuess || game.phase !== "guesser-turn") return;
+    if (bot.team !== game.currentTeam) return;
+    if (bot.isSpymaster) return;
 
-const MUTAKHAFY_SENTENCE_RESPONSES = [
-  "الشي اللي يخلي الحياة حلوة", "لو أقدر أسوي شي واحد",
-  "أفضل شي ممكن يصير", "الحل هو التفكير", "كل شي يمشي",
-  "المهم الصحة", "أبي أرتاح بس",
-];
+    const unrevealed = game.grid
+      .map((c, i) => ({ ...c, idx: i }))
+      .filter((c) => !c.revealed);
+    if (unrevealed.length === 0) return;
 
-function handleMutakhafyBot(io, game, bot, config, phase, data) {
-  const { handleMutakhafySubmit, handleMutakhafyGuess, handleMutakhafyFinalGuesses } = data;
+    // Difficulty determines if bot picks correctly
+    const teamWords = unrevealed.filter((c) => c.type === bot.team);
+    const accuracy = config.correctChance;
 
-  switch (phase) {
-    case "activity": {
-      if (!handleMutakhafySubmit || game.phase !== "activity") return;
-      const type = game.currentActivity?.type;
-      if (!type) return;
-
-      let response;
-      switch (type) {
-        case "reaction":
-          response = REACTION_EMOJIS[Math.floor(Math.random() * REACTION_EMOJIS.length)];
-          break;
-        case "binary":
-          response = Math.random() < 0.5 ? "A" : "B";
-          break;
-        case "word":
-          response = MUTAKHAFY_WORD_RESPONSES[Math.floor(Math.random() * MUTAKHAFY_WORD_RESPONSES.length)];
-          break;
-        case "sentence":
-          response = MUTAKHAFY_SENTENCE_RESPONSES[Math.floor(Math.random() * MUTAKHAFY_SENTENCE_RESPONSES.length)];
-          break;
-        case "rank": {
-          const items = game.currentActivity.data?.items;
-          if (items) {
-            // Random shuffle
-            const shuffled = [...items].sort(() => Math.random() - 0.5);
-            response = shuffled;
-          }
-          break;
-        }
-        case "rate":
-          response = Math.floor(Math.random() * 5) + 1;
-          break;
-        case "who": {
-          // Pick a random player (not self)
-          const others = game.players.filter((p) => p.token !== bot.token);
-          if (others.length > 0) {
-            response = others[Math.floor(Math.random() * others.length)].token;
-          }
-          break;
-        }
-      }
-
-      if (response !== undefined) {
-        handleMutakhafySubmit(io, DUMMY_SOCKET, {
-          roomCode: game.roomCode,
-          token: bot.token,
-          response,
-        });
-      }
-      break;
+    let pick;
+    if (teamWords.length > 0 && chance(accuracy)) {
+      pick = teamWords[Math.floor(Math.random() * teamWords.length)];
+    } else {
+      // Random unrevealed word (could be neutral, opponent, or assassin)
+      const nonTeam = unrevealed.filter((c) => c.type !== bot.team);
+      pick = nonTeam.length > 0
+        ? nonTeam[Math.floor(Math.random() * nonTeam.length)]
+        : unrevealed[Math.floor(Math.random() * unrevealed.length)];
     }
-    case "guess": {
-      if (!handleMutakhafyGuess || game.phase !== "guess") return;
-      // Pick a random disguise that's not ours and guess a random real player
-      const otherDisguises = game.players.filter((p) => p.fakeId !== bot.fakeId);
-      const otherReals = game.players.filter((p) => p.token !== bot.token);
-      if (otherDisguises.length > 0 && otherReals.length > 0) {
-        const disguise = otherDisguises[Math.floor(Math.random() * otherDisguises.length)];
-        const real = otherReals[Math.floor(Math.random() * otherReals.length)];
-        handleMutakhafyGuess(io, DUMMY_SOCKET, {
-          roomCode: game.roomCode,
-          token: bot.token,
-          fakeId: disguise.fakeId,
-          guessedRealToken: real.token,
-        });
-      }
-      break;
-    }
-    case "final-guess": {
-      if (!handleMutakhafyFinalGuesses || game.phase !== "final-guess") return;
-      // Submit guesses for all other disguises
-      const otherDisguises = game.players.filter((p) => p.fakeId !== bot.fakeId);
-      const otherReals = game.players.filter((p) => p.token !== bot.token);
-      const guesses = otherDisguises.map((d) => ({
-        fakeId: d.fakeId,
-        guessedRealToken: otherReals[Math.floor(Math.random() * otherReals.length)].token,
-      }));
-      handleMutakhafyFinalGuesses(io, DUMMY_SOCKET, {
-        roomCode: game.roomCode,
-        token: bot.token,
-        guesses,
-      });
-      break;
-    }
+
+    handleCodenamesGuess(io, DUMMY_SOCKET, {
+      roomCode: game.roomCode,
+      token: bot.token,
+      wordIndex: pick.idx,
+    });
   }
 }

@@ -7,15 +7,14 @@ import Landing from "./screens/Landing.jsx";
 import Lobby from "./screens/Lobby.jsx";
 import PyramidGame from "./screens/pyramid/PyramidGame.jsx";
 import ArenaGame from "./screens/arena/ArenaGame.jsx";
-import FitnaGame from "./screens/fitna/FitnaGame.jsx";
 import SalfaGame from "./screens/salfa/SalfaGame.jsx";
-import MutakhafyGame from "./screens/mutakhafy/MutakhafyGame.jsx";
+import CodenamesGame from "./screens/codenames/CodenamesGame.jsx";
 import Dashboard from "./screens/Dashboard.jsx";
 import MatchHistory from "./screens/MatchHistory.jsx";
 import LevelUpOverlay from "./components/LevelUpOverlay.jsx";
 
 export default function GameZone() {
-  // Screen: identity | landing | lobby | pyramid | arena | fitna | salfa | mutakhafy | dashboard | match-history
+  // Screen: identity | landing | lobby | pyramid | arena | salfa | codenames | dashboard | match-history
   const [screen, setScreen] = useState("loading");
   const [token, setToken] = useState(null);
   const [name, setName] = useState("");
@@ -262,12 +261,10 @@ export default function GameZone() {
         return <PyramidGame token={token} roomCode={roomCode} onFinish={handleGameFinish} onLeave={handleLeaveGame} />;
       case "arena":
         return <ArenaGame token={token} roomCode={roomCode} onFinish={handleGameFinish} onLeave={handleLeaveGame} />;
-      case "fitna":
-        return <FitnaGame token={token} roomCode={roomCode} onFinish={handleGameFinish} onLeave={handleLeaveGame} />;
       case "salfa":
         return <SalfaGame token={token} roomCode={roomCode} onFinish={handleGameFinish} onLeave={handleLeaveGame} />;
-      case "mutakhafy":
-        return <MutakhafyGame token={token} roomCode={roomCode} onFinish={handleGameFinish} onLeave={handleLeaveGame} />;
+      case "codenames":
+        return <CodenamesGame token={token} roomCode={roomCode} onFinish={handleGameFinish} onLeave={handleLeaveGame} />;
       case "dashboard":
         return <Dashboard token={token} rankings={rankings} gameType={gameType} onPlayAgain={handlePlayAgain} xpData={xpData} />;
       default:

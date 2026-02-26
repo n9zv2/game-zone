@@ -7,19 +7,6 @@ import PlayerAvatar from "../components/PlayerAvatar.jsx";
 import useSocket from "../hooks/useSocket.js";
 import socket from "../socket.js";
 
-const FITNA_DEFAULTS = [
-  { min: 4,  max: 5,  saboteurs: 1, detectives: 1 },
-  { min: 6,  max: 8,  saboteurs: 2, detectives: 1 },
-  { min: 9,  max: 12, saboteurs: 2, detectives: 1 },
-  { min: 13, max: 16, saboteurs: 3, detectives: 1 },
-  { min: 17, max: 20, saboteurs: 3, detectives: 2 },
-];
-
-function getFitnaDefaults(count) {
-  const e = FITNA_DEFAULTS.find(d => count >= d.min && count <= d.max);
-  return e || { saboteurs: 1, detectives: 1 };
-}
-
 export default function Lobby({ token, roomCode, initialPlayers, isHost: initialIsHost, onLeave, onGameStart }) {
   const [players, setPlayers] = useState(initialPlayers || []);
   const [isHost, setIsHost] = useState(initialIsHost);
@@ -27,17 +14,9 @@ export default function Lobby({ token, roomCode, initialPlayers, isHost: initial
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [starting, setStarting] = useState(false);
-  // Fitna settings
-  const [fitnaCustom, setFitnaCustom] = useState(false);
-  const [fitnaSaboteurs, setFitnaSaboteurs] = useState(0);
-  const [fitnaDetectives, setFitnaDetectives] = useState(0);
-  const [fitnaDiscussionTime, setFitnaDiscussionTime] = useState(60);
-  const [fitnaVoteTime, setFitnaVoteTime] = useState(30);
   // Salfa settings
   const [salfaRounds, setSalfaRounds] = useState(3);
   const [salfaSpyCount, setSalfaSpyCount] = useState(0); // 0 = auto
-  // Mutakhafy settings
-  const [mutakhafyRounds, setMutakhafyRounds] = useState(0); // 0 = auto
 
   useSocket("room:player-joined", useCallback((data) => {
     setPlayers(data.players);
@@ -117,17 +96,8 @@ export default function Lobby({ token, roomCode, initialPlayers, isHost: initial
     setStarting(true);
     setError("");
     const payload = { token, code: roomCode, gameType: selectedGame };
-    if (selectedGame === "fitna") {
-      payload.settings = {
-        saboteurCount: fitnaCustom ? fitnaSaboteurs : 0,
-        detectiveCount: fitnaCustom ? fitnaDetectives : 0,
-        discussionTime: fitnaDiscussionTime,
-        voteTime: fitnaVoteTime,
-      };
-    } else if (selectedGame === "salfa") {
+    if (selectedGame === "salfa") {
       payload.settings = { rounds: salfaRounds, spyCount: salfaSpyCount };
-    } else if (selectedGame === "mutakhafy") {
-      payload.settings = { rounds: mutakhafyRounds || 0 };
     }
     socket.emit("room:start-game", payload, (res) => {
       setStarting(false);
@@ -210,9 +180,8 @@ export default function Lobby({ token, roomCode, initialPlayers, isHost: initial
             {[
               { id: "pyramid", icon: "🔺", name: "الهرم", color: C.red, min: 2 },
               { id: "arena", icon: "⚔️", name: "الحلبة", color: C.orange, min: 2 },
-              { id: "fitna", icon: "🎭", name: "فتنة", color: C.purple, min: 4 },
               { id: "salfa", icon: "🕵️", name: "مين برا السالفة", color: C.cyan, min: 3 },
-              { id: "mutakhafy", icon: "🥸", name: "المتخفي", color: C.pink, min: 4 },
+              { id: "codenames", icon: "🔤", name: "كلمات سرية", color: C.purple, min: 4 },
             ].map((g) => (
               <Card key={g.id} onClick={() => setSelectedGame(g.id)} glow={selectedGame === g.id} color={g.color} style={{
                 flex: 1, textAlign: "center", padding: 14, cursor: "pointer",
@@ -224,99 +193,6 @@ export default function Lobby({ token, roomCode, initialPlayers, isHost: initial
               </Card>
             ))}
           </div>
-
-          {/* Fitna Settings */}
-          {selectedGame === "fitna" && (
-            <Card style={{ marginBottom: 12, padding: 14 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: C.purple, marginBottom: 10 }}>⚙️ إعدادات فتنة</div>
-
-              {/* Auto/Custom toggle */}
-              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                <button onClick={() => setFitnaCustom(false)} style={{
-                  flex: 1, padding: "6px 8px", border: `1px solid ${!fitnaCustom ? C.purple : C.border}`,
-                  borderRadius: 8, background: !fitnaCustom ? `${C.purple}20` : "transparent",
-                  color: !fitnaCustom ? C.purple : C.muted, fontSize: 12, fontWeight: 700,
-                  cursor: "pointer", fontFamily: "inherit",
-                }}>تلقائي</button>
-                <button onClick={() => setFitnaCustom(true)} style={{
-                  flex: 1, padding: "6px 8px", border: `1px solid ${fitnaCustom ? C.purple : C.border}`,
-                  borderRadius: 8, background: fitnaCustom ? `${C.purple}20` : "transparent",
-                  color: fitnaCustom ? C.purple : C.muted, fontSize: 12, fontWeight: 700,
-                  cursor: "pointer", fontFamily: "inherit",
-                }}>يدوي</button>
-              </div>
-
-              {!fitnaCustom && (() => {
-                const d = getFitnaDefaults(connectedCount);
-                return (
-                  <div style={{ fontSize: 11, color: C.muted, textAlign: "center", marginBottom: 8 }}>
-                    {connectedCount} لاعب → {d.saboteurs} خائن، {d.detectives} محقق
-                  </div>
-                );
-              })()}
-
-              {fitnaCustom && (
-                <div style={{ display: "flex", gap: 12, marginBottom: 10 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>خونة</div>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      {[1, 2, 3, 4].map((n) => (
-                        <button key={n} onClick={() => setFitnaSaboteurs(n)} style={{
-                          flex: 1, padding: "6px 0", border: `1px solid ${fitnaSaboteurs === n ? C.red : C.border}`,
-                          borderRadius: 6, background: fitnaSaboteurs === n ? `${C.red}20` : "transparent",
-                          color: fitnaSaboteurs === n ? C.red : C.muted, fontSize: 13, fontWeight: 800,
-                          cursor: "pointer", fontFamily: "inherit",
-                        }}>{n}</button>
-                      ))}
-                    </div>
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>محققين</div>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      {[0, 1, 2].map((n) => (
-                        <button key={n} onClick={() => setFitnaDetectives(n)} style={{
-                          flex: 1, padding: "6px 0", border: `1px solid ${fitnaDetectives === n ? C.cyan : C.border}`,
-                          borderRadius: 6, background: fitnaDetectives === n ? `${C.cyan}20` : "transparent",
-                          color: fitnaDetectives === n ? C.cyan : C.muted, fontSize: 13, fontWeight: 800,
-                          cursor: "pointer", fontFamily: "inherit",
-                        }}>{n}</button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Discussion & Vote time */}
-              <div style={{ display: "flex", gap: 12 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>وقت النقاش</div>
-                  <div style={{ display: "flex", gap: 4 }}>
-                    {[30, 60, 90].map((t) => (
-                      <button key={t} onClick={() => setFitnaDiscussionTime(t)} style={{
-                        flex: 1, padding: "6px 0", border: `1px solid ${fitnaDiscussionTime === t ? C.green : C.border}`,
-                        borderRadius: 6, background: fitnaDiscussionTime === t ? `${C.green}20` : "transparent",
-                        color: fitnaDiscussionTime === t ? C.green : C.muted, fontSize: 11, fontWeight: 700,
-                        cursor: "pointer", fontFamily: "inherit",
-                      }}>{t}s</button>
-                    ))}
-                  </div>
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>وقت التصويت</div>
-                  <div style={{ display: "flex", gap: 4 }}>
-                    {[15, 30, 45].map((t) => (
-                      <button key={t} onClick={() => setFitnaVoteTime(t)} style={{
-                        flex: 1, padding: "6px 0", border: `1px solid ${fitnaVoteTime === t ? C.gold : C.border}`,
-                        borderRadius: 6, background: fitnaVoteTime === t ? `${C.gold}20` : "transparent",
-                        color: fitnaVoteTime === t ? C.gold : C.muted, fontSize: 11, fontWeight: 700,
-                        cursor: "pointer", fontFamily: "inherit",
-                      }}>{t}s</button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </Card>
-          )}
 
           {/* Salfa Settings */}
           {selectedGame === "salfa" && (
@@ -356,37 +232,12 @@ export default function Lobby({ token, roomCode, initialPlayers, isHost: initial
             </Card>
           )}
 
-          {/* Mutakhafy Settings */}
-          {selectedGame === "mutakhafy" && (
-            <Card style={{ marginBottom: 12, padding: 14 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: C.pink, marginBottom: 10 }}>⚙️ إعدادات المتخفي</div>
-              <div>
-                <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>عدد الجولات</div>
-                <div style={{ display: "flex", gap: 4 }}>
-                  {[0, 3, 4, 5, 6, 7].map((n) => (
-                    <button key={n} onClick={() => setMutakhafyRounds(n)} style={{
-                      flex: 1, padding: "6px 0", border: `1px solid ${mutakhafyRounds === n ? C.pink : C.border}`,
-                      borderRadius: 6, background: mutakhafyRounds === n ? `${C.pink}20` : "transparent",
-                      color: mutakhafyRounds === n ? C.pink : C.muted, fontSize: 12, fontWeight: 800,
-                      cursor: "pointer", fontFamily: "inherit",
-                    }}>{n === 0 ? "تلقائي" : n}</button>
-                  ))}
-                </div>
-              </div>
-              <div style={{ fontSize: 11, color: C.muted, textAlign: "center", marginTop: 8 }}>
-                {mutakhafyRounds === 0
-                  ? `${connectedCount} لاعب → ${connectedCount <= 5 ? 4 : connectedCount <= 6 ? 5 : connectedCount <= 8 ? 6 : 7} جولات (تلقائي)`
-                  : `${mutakhafyRounds} جولات`}
-              </div>
-            </Card>
-          )}
-
           {error && <div style={{ textAlign: "center", color: C.red, fontSize: 13, fontWeight: 700, marginBottom: 8 }}>❌ {error}</div>}
 
           {(() => {
-            const minPlayers = selectedGame === "fitna" ? 4 : selectedGame === "salfa" ? 3 : selectedGame === "mutakhafy" ? 4 : 2;
-            const gameColors = { pyramid: C.red, arena: C.orange, fitna: C.purple, salfa: C.cyan, mutakhafy: C.pink };
-            const gameNames = { pyramid: "الهرم", arena: "الحلبة", fitna: "فتنة", salfa: "مين برا السالفة", mutakhafy: "المتخفي" };
+            const minPlayers = selectedGame === "codenames" ? 4 : selectedGame === "salfa" ? 3 : 2;
+            const gameColors = { pyramid: C.red, arena: C.orange, salfa: C.cyan, codenames: C.purple };
+            const gameNames = { pyramid: "الهرم", arena: "الحلبة", salfa: "مين برا السالفة", codenames: "كلمات سرية" };
             const notEnough = connectedCount < minPlayers;
             return (
               <Btn

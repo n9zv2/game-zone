@@ -42,9 +42,9 @@ export default function MatchHistory({ onBack }) {
             }}>
               <div style={{
                 fontSize: 28, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center",
-                background: m.gameType === "pyramid" ? `${C.red}12` : `${C.orange}12`, borderRadius: 10,
+                background: m.gameType === "pyramid" ? `${C.red}12` : m.gameType === "codenames" ? `${C.purple}12` : m.gameType === "salfa" ? `${C.cyan}12` : `${C.orange}12`, borderRadius: 10,
               }}>
-                {m.gameType === "pyramid" ? "🔺" : "⚔️"}
+                {m.gameType === "pyramid" ? "🔺" : m.gameType === "arena" ? "⚔️" : m.gameType === "salfa" ? "🕵️" : m.gameType === "codenames" ? "🔤" : "🎮"}
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 2 }}>

@@ -22,7 +22,7 @@ export async function generateResultCard({ name, avatar, rank, score, totalPlaye
   // Game type icon + title
   ctx.textAlign = "center";
   ctx.font = "48px serif";
-  ctx.fillText(gameType === "pyramid" ? "🔺" : "⚔️", W / 2, 70);
+  ctx.fillText(gameType === "pyramid" ? "🔺" : gameType === "arena" ? "⚔️" : gameType === "salfa" ? "🕵️" : gameType === "codenames" ? "🔤" : "🎮", W / 2, 70);
   ctx.font = "bold 28px 'Segoe UI', sans-serif";
   ctx.fillStyle = "#00E676";
   ctx.fillText("GAME ZONE", W / 2, 110);

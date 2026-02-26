@@ -29,18 +29,13 @@ import {
 } from "./games/pyramid.js";
 import { startArena, handleArenaSubmit, updateArenaSocket } from "./games/arena.js";
 import {
-  startFitna, handleFitnaAction, handleFitnaCard, handleFitnaVote,
-  handleDiscussionAction, handleSecretWordHint, handleFaceOffAnswer,
-  handleNightAction, handleChatMessage,
-} from "./games/fitna.js";
-import {
   startSalfa, handleHint, handleVoteRequest, handleVote as handleSalfaVote,
   handleSpyGuess, updateSalfaSocket,
 } from "./games/salfa.js";
 import {
-  startMutakhafy, handleMutakhafySubmit, handleMutakhafyGuess,
-  handleMutakhafyFinalGuesses,
-} from "./games/mutakhafy.js";
+  startCodenames, handleCodenamesClue, handleCodenamesGuess,
+  handleCodenamesEndTurn, updateCodenamesSocket,
+} from "./games/codenames.js";
 import { createBot, removeBot } from "./botManager.js";
 
 const app = express();
@@ -88,7 +83,7 @@ initSessionLookup(getSession);
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 
 // Valid game types for room:start-game
-const VALID_GAME_TYPES = ["pyramid", "arena", "fitna", "salfa", "mutakhafy"];
+const VALID_GAME_TYPES = ["pyramid", "arena", "salfa", "codenames"];
 
 io.on("connection", (socket) => {
   let currentToken = null;
@@ -281,12 +276,10 @@ io.on("connection", (socket) => {
         startPyramid(io, room);
       } else if (gameType === "arena") {
         startArena(io, room);
-      } else if (gameType === "fitna") {
-        startFitna(io, room, settings || {});
       } else if (gameType === "salfa") {
         startSalfa(io, room, settings || {});
-      } else if (gameType === "mutakhafy") {
-        startMutakhafy(io, room, settings || {});
+      } else if (gameType === "codenames") {
+        startCodenames(io, room, settings || {});
       }
     }, 500);
 
@@ -307,38 +300,18 @@ io.on("connection", (socket) => {
     handleArenaSubmit(io, socket, data);
   });
 
-  // Fitna events
-  socket.on("fitna:action", (data) => {
-    handleFitnaAction(io, socket, data);
+  // Codenames events
+  socket.on("codenames:clue", (data) => {
+    if (data && typeof data.word === "string") data.word = sanitizeText(data.word, 30);
+    handleCodenamesClue(io, socket, data);
   });
 
-  socket.on("fitna:card", (data) => {
-    handleFitnaCard(io, socket, data);
+  socket.on("codenames:guess", (data) => {
+    handleCodenamesGuess(io, socket, data);
   });
 
-  socket.on("fitna:vote", (data) => {
-    handleFitnaVote(io, socket, data);
-  });
-
-  socket.on("fitna:discussion-action", (data) => {
-    handleDiscussionAction(io, socket, data);
-  });
-
-  socket.on("fitna:chat-message", (data) => {
-    if (data && typeof data.message === "string") data.message = sanitizeText(data.message);
-    handleChatMessage(io, socket, data);
-  });
-
-  socket.on("fitna:secret-word-hint", (data) => {
-    handleSecretWordHint(io, socket, data);
-  });
-
-  socket.on("fitna:face-off-answer", (data) => {
-    handleFaceOffAnswer(io, socket, data);
-  });
-
-  socket.on("fitna:night-action", (data) => {
-    handleNightAction(io, socket, data);
+  socket.on("codenames:end-turn", (data) => {
+    handleCodenamesEndTurn(io, socket, data);
   });
 
   // Salfa events
@@ -357,19 +330,6 @@ io.on("connection", (socket) => {
 
   socket.on("salfa:spy-guess", (data) => {
     handleSpyGuess(io, socket, data);
-  });
-
-  // Mutakhafy events
-  socket.on("mutakhafy:submit", (data) => {
-    handleMutakhafySubmit(io, socket, data);
-  });
-
-  socket.on("mutakhafy:guess", (data) => {
-    handleMutakhafyGuess(io, socket, data);
-  });
-
-  socket.on("mutakhafy:final-guesses", (data) => {
-    handleMutakhafyFinalGuesses(io, socket, data);
   });
 
   // Reactions
@@ -397,6 +357,7 @@ io.on("connection", (socket) => {
       if (room.gameType === "pyramid") updatePyramidSocket(code, token, socket.id);
       if (room.gameType === "arena") updateArenaSocket(code, token, socket.id);
       if (room.gameType === "salfa") updateSalfaSocket(io, code, token, socket.id);
+      if (room.gameType === "codenames") updateCodenamesSocket(code, token, socket.id);
     }
 
     const players = getPublicPlayers(room);
