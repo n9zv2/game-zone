@@ -35,7 +35,6 @@ export function startCodenames(io, room) {
   for (let i = 0; i < blueTotal; i++) types.push("blue");
   types.push("assassin");
   while (types.length < 25) types.push("neutral");
-  // Shuffle types
   for (let i = types.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [types[i], types[j]] = [types[j], types[i]];
@@ -49,14 +48,14 @@ export function startCodenames(io, room) {
 
   const players = connected.map((p) => {
     const team = redPlayers.includes(p) ? "red" : "blue";
-    const isSpymaster = p.token === redSpymaster || p.token === blueSpymaster;
+    const isSpy = p.token === redSpymaster || p.token === blueSpymaster;
     return {
       token: p.token,
       name: p.name,
       avatar: p.avatar,
       socketId: p.socketId,
       team,
-      isSpymaster,
+      isSpymaster: isSpy,
       score: 0,
     };
   });
@@ -65,7 +64,7 @@ export function startCodenames(io, room) {
     roomCode: room.code,
     players,
     grid,
-    phase: "team-reveal", // team-reveal → spymaster-turn → guesser-turn → game-over
+    phase: "countdown",
     currentTeam: startingTeam,
     startingTeam,
     redTotal,
@@ -74,55 +73,103 @@ export function startCodenames(io, room) {
     blueFound: 0,
     clue: null,
     guessesLeft: 0,
+    clueHistory: [],
     teams: {
       red: { spymaster: redSpymaster, players: redPlayers.map((p) => p.token) },
       blue: { spymaster: blueSpymaster, players: bluePlayers.map((p) => p.token) },
     },
     _timeout: null,
+    _warningTimeout: null,
   };
 
   activeGames.set(room.code, game);
 
   const roomId = `room:${room.code}`;
 
-  // Send personalized start data to each player
+  // Build personalized payload per player
   players.forEach((p) => {
-    const payload = {
-      myToken: p.token,
-      myTeam: p.team,
-      isSpymaster: p.isSpymaster,
-      currentTeam: startingTeam,
-      grid: grid.map((cell) => ({
-        word: cell.word,
-        revealed: false,
-        // Spymasters see the key card
-        type: p.isSpymaster ? cell.type : null,
-      })),
-      teams: {
-        red: {
-          spymaster: redSpymaster,
-          players: redPlayers.map((rp) => ({ token: rp.token, name: rp.name, avatar: rp.avatar })),
-        },
-        blue: {
-          spymaster: blueSpymaster,
-          players: bluePlayers.map((bp) => ({ token: bp.token, name: bp.name, avatar: bp.avatar })),
-        },
-      },
-      redTotal,
-      blueTotal,
-      redFound: 0,
-      blueFound: 0,
-    };
-
+    const payload = buildFullState(game, p.token);
     if (p.socketId) {
       io.to(p.socketId).emit("codenames:start", payload);
     }
   });
 
-  // After team reveal, start first turn
-  game._timeout = setTimeout(() => {
-    startTurn(io, room.code);
-  }, 5000);
+  // Countdown: 3-2-1
+  runCountdown(io, room.code, 3, () => {
+    game.phase = "team-reveal";
+    io.to(roomId).emit("codenames:phase", { phase: "team-reveal" });
+
+    // After 8s team reveal, start first turn
+    game._timeout = setTimeout(() => {
+      startTurn(io, room.code);
+    }, 8000);
+  });
+}
+
+// ============================================================
+// Countdown helper (3-2-1)
+// ============================================================
+function runCountdown(io, roomCode, seconds, callback) {
+  const game = activeGames.get(roomCode);
+  if (!game) return;
+  const roomId = `room:${roomCode}`;
+
+  let count = seconds;
+  io.to(roomId).emit("codenames:countdown", { count });
+
+  const interval = setInterval(() => {
+    count--;
+    if (count <= 0) {
+      clearInterval(interval);
+      callback();
+    } else {
+      io.to(roomId).emit("codenames:countdown", { count });
+    }
+  }, 1000);
+
+  // Store so we can clean up
+  game._countdownInterval = interval;
+}
+
+// ============================================================
+// Build full state payload for a player (used for start + reconnect)
+// ============================================================
+function buildFullState(game, token) {
+  const player = game.players.find((p) => p.token === token);
+  if (!player) return null;
+
+  const redPlayers = game.players.filter((p) => p.team === "red");
+  const bluePlayers = game.players.filter((p) => p.team === "blue");
+
+  return {
+    myToken: token,
+    myTeam: player.team,
+    isSpymaster: player.isSpymaster,
+    currentTeam: game.currentTeam,
+    phase: game.phase,
+    grid: game.grid.map((cell) => ({
+      word: cell.word,
+      revealed: cell.revealed,
+      type: player.isSpymaster || cell.revealed ? cell.type : null,
+    })),
+    teams: {
+      red: {
+        spymaster: game.teams.red.spymaster,
+        players: redPlayers.map((rp) => ({ token: rp.token, name: rp.name, avatar: rp.avatar })),
+      },
+      blue: {
+        spymaster: game.teams.blue.spymaster,
+        players: bluePlayers.map((bp) => ({ token: bp.token, name: bp.name, avatar: bp.avatar })),
+      },
+    },
+    redTotal: game.redTotal,
+    blueTotal: game.blueTotal,
+    redFound: game.redFound,
+    blueFound: game.blueFound,
+    clue: game.clue,
+    guessesLeft: game.guessesLeft,
+    clueHistory: game.clueHistory,
+  };
 }
 
 // ============================================================
@@ -136,7 +183,8 @@ function startTurn(io, roomCode) {
   game.clue = null;
   game.guessesLeft = 0;
 
-  const timerEnd = Date.now() + 45000;
+  const timerEnd = Date.now() + 60000; // 60s for spymaster
+  game._timerEnd = timerEnd;
   const roomId = `room:${roomCode}`;
 
   io.to(roomId).emit("codenames:turn", {
@@ -153,14 +201,21 @@ function startTurn(io, roomCode) {
     });
   }
 
-  // Auto-pass if spymaster doesn't give clue in 45s
+  // Timer warning at last 10s
+  clearTimeout(game._warningTimeout);
+  game._warningTimeout = setTimeout(() => {
+    if (game.phase === "spymaster-turn") {
+      io.to(roomId).emit("codenames:timer-warning", { phase: "spymaster-turn" });
+    }
+  }, 50000);
+
+  // Auto-pass if spymaster doesn't give clue in 60s
   clearTimeout(game._timeout);
   game._timeout = setTimeout(() => {
     if (game.phase === "spymaster-turn") {
-      // Auto-clue: pass turn
       switchTeam(io, roomCode);
     }
-  }, 46000);
+  }, 61000);
 }
 
 // ============================================================
@@ -171,22 +226,32 @@ export function handleCodenamesClue(io, socket, data) {
   const game = activeGames.get(roomCode);
   if (!game || game.phase !== "spymaster-turn") return;
 
-  // Validate: only current team's spymaster can give clue
   const spymasterToken = game.teams[game.currentTeam].spymaster;
   if (token !== spymasterToken) return;
 
-  // Validate clue
   const clueWord = (word || "").trim();
   if (!clueWord || clueWord.length > 30) return;
+  // Validate: no spaces (single word)
+  if (/\s/.test(clueWord)) return;
+
   const clueCount = Math.max(0, Math.min(9, parseInt(count) || 0));
 
   game.clue = { word: clueWord, count: clueCount };
-  game.guessesLeft = clueCount === 0 ? 25 : clueCount + 1; // 0 = unlimited
+  game.guessesLeft = clueCount === 0 ? 25 : clueCount + 1;
   game.phase = "guesser-turn";
 
-  clearTimeout(game._timeout);
+  // Save to history
+  game.clueHistory.push({
+    team: game.currentTeam,
+    word: clueWord,
+    count: clueCount,
+  });
 
-  const timerEnd = Date.now() + 60000;
+  clearTimeout(game._timeout);
+  clearTimeout(game._warningTimeout);
+
+  const timerEnd = Date.now() + 90000; // 90s for guessers
+  game._timerEnd = timerEnd;
   const roomId = `room:${roomCode}`;
 
   io.to(roomId).emit("codenames:clue", {
@@ -194,6 +259,7 @@ export function handleCodenamesClue(io, socket, data) {
     clue: game.clue,
     guessesLeft: game.guessesLeft,
     timerEnd,
+    clueHistory: game.clueHistory,
   });
 
   // Schedule bot guesses
@@ -201,12 +267,19 @@ export function handleCodenamesClue(io, socket, data) {
     handleCodenamesGuess,
   });
 
-  // Auto-end turn after 60s
+  // Timer warning at last 10s
+  game._warningTimeout = setTimeout(() => {
+    if (game.phase === "guesser-turn") {
+      io.to(roomId).emit("codenames:timer-warning", { phase: "guesser-turn" });
+    }
+  }, 80000);
+
+  // Auto-end turn after 90s
   game._timeout = setTimeout(() => {
-    if (game.phase === "guesser-turn" && game.currentTeam === (game.clue ? game.currentTeam : null)) {
+    if (game.phase === "guesser-turn") {
       switchTeam(io, roomCode);
     }
-  }, 61000);
+  }, 91000);
 }
 
 // ============================================================
@@ -217,12 +290,10 @@ export function handleCodenamesGuess(io, socket, data) {
   const game = activeGames.get(roomCode);
   if (!game || game.phase !== "guesser-turn") return;
 
-  // Validate: only current team's guessers can guess
   const player = game.players.find((p) => p.token === token);
   if (!player || player.team !== game.currentTeam) return;
-  if (player.isSpymaster) return; // Spymaster can't guess
+  if (player.isSpymaster) return;
 
-  // Validate index
   const idx = parseInt(wordIndex);
   if (isNaN(idx) || idx < 0 || idx >= 25) return;
   if (game.grid[idx].revealed) return;
@@ -234,11 +305,18 @@ export function handleCodenamesGuess(io, socket, data) {
 
   const roomId = `room:${roomCode}`;
 
+  // Determine result type for feedback
+  let resultType = "neutral"; // neutral/opponent
+  if (cell.type === game.currentTeam) resultType = "correct";
+  else if (cell.type === "assassin") resultType = "assassin";
+  else if (cell.type !== "neutral") resultType = "opponent";
+
   io.to(roomId).emit("codenames:reveal", {
     wordIndex: idx,
     type: cell.type,
     revealedBy: token,
     currentTeam: game.currentTeam,
+    resultType,
   });
 
   // Track found counts
@@ -247,14 +325,12 @@ export function handleCodenamesGuess(io, socket, data) {
 
   // Check win/loss conditions
   if (cell.type === "assassin") {
-    // Team that picked assassin loses
     const losingTeam = game.currentTeam;
     const winningTeam = losingTeam === "red" ? "blue" : "red";
     endGame(io, roomCode, winningTeam, "assassin");
     return;
   }
 
-  // Check if a team found all their words
   if (game.redFound >= game.redTotal) {
     endGame(io, roomCode, "red", "all-found");
     return;
@@ -266,21 +342,20 @@ export function handleCodenamesGuess(io, socket, data) {
 
   // Determine if turn continues
   if (cell.type === game.currentTeam) {
-    // Correct guess — continue if guesses left
     if (game.guessesLeft <= 0) {
       switchTeam(io, roomCode);
     } else {
-      // Emit updated guesses count
       io.to(roomId).emit("codenames:guess-update", {
         guessesLeft: game.guessesLeft,
+        redFound: game.redFound,
+        blueFound: game.blueFound,
       });
-      // Schedule more bot guesses if applicable
       scheduleBotActions(io, game, "codenames", "guess", {
         handleCodenamesGuess,
       });
     }
   } else {
-    // Wrong guess (neutral or opponent's word) — turn ends
+    // Wrong guess — turn ends
     switchTeam(io, roomCode);
   }
 }
@@ -293,7 +368,6 @@ export function handleCodenamesEndTurn(io, socket, data) {
   const game = activeGames.get(roomCode);
   if (!game || game.phase !== "guesser-turn") return;
 
-  // Only current team members can end turn
   const player = game.players.find((p) => p.token === token);
   if (!player || player.team !== game.currentTeam) return;
 
@@ -301,24 +375,27 @@ export function handleCodenamesEndTurn(io, socket, data) {
 }
 
 // ============================================================
-// Switch to other team's turn
+// Switch to other team's turn (with switching animation)
 // ============================================================
 function switchTeam(io, roomCode) {
   const game = activeGames.get(roomCode);
   if (!game || game.phase === "game-over") return;
 
   clearTimeout(game._timeout);
+  clearTimeout(game._warningTimeout);
   game.currentTeam = game.currentTeam === "red" ? "blue" : "red";
+  game.phase = "switching";
 
   const roomId = `room:${roomCode}`;
   io.to(roomId).emit("codenames:switch-team", {
     currentTeam: game.currentTeam,
+    switchDuration: 3000,
   });
 
-  // Small delay before starting next turn
+  // 3s switching animation, then start next turn
   game._timeout = setTimeout(() => {
     startTurn(io, roomCode);
-  }, 2000);
+  }, 3000);
 }
 
 // ============================================================
@@ -329,16 +406,26 @@ function endGame(io, roomCode, winningTeam, reason) {
   if (!game) return;
 
   clearTimeout(game._timeout);
+  clearTimeout(game._warningTimeout);
+  if (game._countdownInterval) clearInterval(game._countdownInterval);
   game.phase = "game-over";
 
-  // Score: winners 200, losers 50, spymaster bonus +75
+  // Better scoring:
+  // Winner team: 150 + (25 × their words revealed)
+  // Loser team: 50 + (10 × their words revealed)
+  // Winning spymaster: +100 bonus
   game.players.forEach((p) => {
     const isWinner = p.team === winningTeam;
-    p.score = isWinner ? 200 : 50;
-    if (p.isSpymaster && isWinner) p.score += 75;
+    const teamFound = p.team === "red" ? game.redFound : game.blueFound;
+    if (isWinner) {
+      p.score = 150 + (25 * teamFound);
+      if (p.isSpymaster) p.score += 100;
+    } else {
+      p.score = 50 + (10 * teamFound);
+    }
   });
 
-  // Sort by score descending for rankings
+  // Sort by score descending
   const ranked = [...game.players].sort((a, b) => b.score - a.score);
 
   // Award XP
@@ -359,12 +446,17 @@ function endGame(io, roomCode, winningTeam, reason) {
 
   io.to(roomId).emit("codenames:game-over", {
     winningTeam,
-    reason, // "assassin" | "all-found"
+    reason,
     grid: game.grid.map((cell) => ({
       word: cell.word,
       type: cell.type,
       revealed: cell.revealed,
     })),
+    clueHistory: game.clueHistory,
+    redFound: game.redFound,
+    blueFound: game.blueFound,
+    redTotal: game.redTotal,
+    blueTotal: game.blueTotal,
     rankings: ranked.map((p, i) => ({
       rank: i + 1,
       token: p.token,
@@ -383,14 +475,21 @@ function endGame(io, roomCode, winningTeam, reason) {
 }
 
 // ============================================================
-// Reconnection
+// Reconnection — sends full game state to reconnecting player
 // ============================================================
-export function updateCodenamesSocket(roomCode, token, socketId) {
+export function updateCodenamesSocket(io, roomCode, token, socketId) {
   const game = activeGames.get(roomCode);
   if (!game) return;
 
   const player = game.players.find((p) => p.token === token);
-  if (player) {
-    player.socketId = socketId;
+  if (!player) return;
+
+  player.socketId = socketId;
+
+  // Send full state to reconnecting player
+  const payload = buildFullState(game, token);
+  if (payload && socketId) {
+    payload.timerEnd = game._timerEnd || 0;
+    io.to(socketId).emit("codenames:reconnect", payload);
   }
 }

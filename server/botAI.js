@@ -255,41 +255,53 @@ function handleSalfaBot(io, game, bot, config, phase, data) {
 }
 
 // ============================================================
-// CODENAMES BOT (guesser only — bots are never spymaster)
+// CODENAMES BOT
 // ============================================================
+const BOT_CLUE_BANK = [
+  "حيوان", "أكل", "مكان", "طبيعة", "رياضة", "لون", "شكل", "حجم",
+  "بناء", "سفر", "بحر", "صحراء", "مدينة", "عائلة", "حرب", "سلاح",
+  "موسيقى", "فن", "علم", "تاريخ", "زراعة", "صناعة", "تجارة", "طبخ",
+  "ملابس", "أدوات", "معدن", "خشب", "ماء", "نار", "هواء", "أرض",
+];
+
 function handleCodenamesBot(io, game, bot, config, phase, data) {
   const { handleCodenamesClue, handleCodenamesGuess } = data;
 
-  // Bot spymaster: give a generic clue
+  // Bot spymaster: give a clue from word bank
   if (phase === "spymaster-clue") {
     if (!handleCodenamesClue || game.phase !== "spymaster-turn") return;
     const spymasterToken = game.teams[game.currentTeam]?.spymaster;
     if (bot.token !== spymasterToken) return;
 
-    // Pick a simple clue — just say a vague word with count 1
     const teamWords = game.grid.filter((c) => c.type === bot.team && !c.revealed);
-    const clueWord = teamWords.length > 0 ? "تلميح" : "تخمين";
+    // Pick a random clue from the bank (avoid repeats if possible)
+    const usedClues = (game.clueHistory || []).map((c) => c.word);
+    const available = BOT_CLUE_BANK.filter((w) => !usedClues.includes(w));
+    const pool = available.length > 0 ? available : BOT_CLUE_BANK;
+    const clueWord = pool[Math.floor(Math.random() * pool.length)];
+    const clueCount = Math.min(2, teamWords.length);
+
     handleCodenamesClue(io, DUMMY_SOCKET, {
       roomCode: game.roomCode,
       token: bot.token,
       word: clueWord,
-      count: Math.min(2, teamWords.length),
+      count: Math.max(1, clueCount),
     });
     return;
   }
 
-  // Bot guesser: pick a word
+  // Bot guesser: pick a word (NEVER pick assassin)
   if (phase === "guess") {
     if (!handleCodenamesGuess || game.phase !== "guesser-turn") return;
     if (bot.team !== game.currentTeam) return;
     if (bot.isSpymaster) return;
 
+    // Filter out assassin — bot NEVER picks it
     const unrevealed = game.grid
       .map((c, i) => ({ ...c, idx: i }))
-      .filter((c) => !c.revealed);
+      .filter((c) => !c.revealed && c.type !== "assassin");
     if (unrevealed.length === 0) return;
 
-    // Difficulty determines if bot picks correctly
     const teamWords = unrevealed.filter((c) => c.type === bot.team);
     const accuracy = config.correctChance;
 
@@ -297,17 +309,23 @@ function handleCodenamesBot(io, game, bot, config, phase, data) {
     if (teamWords.length > 0 && chance(accuracy)) {
       pick = teamWords[Math.floor(Math.random() * teamWords.length)];
     } else {
-      // Random unrevealed word (could be neutral, opponent, or assassin)
+      // Wrong guess — pick neutral or opponent (still excluding assassin)
       const nonTeam = unrevealed.filter((c) => c.type !== bot.team);
       pick = nonTeam.length > 0
         ? nonTeam[Math.floor(Math.random() * nonTeam.length)]
         : unrevealed[Math.floor(Math.random() * unrevealed.length)];
     }
 
-    handleCodenamesGuess(io, DUMMY_SOCKET, {
-      roomCode: game.roomCode,
-      token: bot.token,
-      wordIndex: pick.idx,
-    });
+    // Realistic delay: 3-6 seconds between guesses
+    const guessDelay = 3000 + Math.random() * 3000;
+    setTimeout(() => {
+      if (game.phase !== "guesser-turn") return;
+      if (bot.team !== game.currentTeam) return;
+      handleCodenamesGuess(io, DUMMY_SOCKET, {
+        roomCode: game.roomCode,
+        token: bot.token,
+        wordIndex: pick.idx,
+      });
+    }, guessDelay);
   }
 }

@@ -357,7 +357,7 @@ io.on("connection", (socket) => {
       if (room.gameType === "pyramid") updatePyramidSocket(code, token, socket.id);
       if (room.gameType === "arena") updateArenaSocket(code, token, socket.id);
       if (room.gameType === "salfa") updateSalfaSocket(io, code, token, socket.id);
-      if (room.gameType === "codenames") updateCodenamesSocket(code, token, socket.id);
+      if (room.gameType === "codenames") updateCodenamesSocket(io, code, token, socket.id);
     }
 
     const players = getPublicPlayers(room);
